@@ -1,0 +1,16 @@
+## Environment
+```
+uv vnev
+```
+
+```
+source .venv/bin/activate
+```
+
+```
+deactivate
+```
+
+GitHub repo for vLLM: https://github.com/vllm-project/vllm#
+Website: https://docs.vllm.ai/en/latest/
+Website for vLLM by Red Hat: https://www.redhat.com/en/topics/ai/what-is-vllm
