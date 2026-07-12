@@ -1,16 +1,16 @@
 # vLLM-learn
 
-## Methods決定ログ（2026-07-12）
-- vLLM v0.25.0 固定（commit 702f4814fe54fabff350d43cb753ae3e47c0c276）、
-  fork IsseiHasegawa/vllm の instrumentation ブランチで計装
-- 環境: RunPod A40 48GB を全実験で統一（1x / tp=2は2x）。
-  ベンチクライアントはサーバと同一Pod上（localhost）
-- D1: 全ランで --ignore-eos（モデル間で生成トークン数を統制）
-- D2: --num-warmups 10。サーバ起動直後は捨てラン1本
-- D3: サーバ起動は（モデル×TP構成）ごと。レート・データセット・反復は同一サーバで実行
-- D4: run帰属はmanifest方式（開始/終了時刻でphase JSONLをスライス）
-- D5: 主指標p95。p99はn=200のため3反復の誤差棒付き参考値
-- D6: 反復は同一seed=42（ワークロード固定、誤差棒は系統ノイズのみを表す）
-- D7: 1GPU実験（S1,S2,S3,I1,I2）は同一インスタンスの1セッションに統合
-- D8: --no-enable-prefix-caching 必須 / --disable-log-stats 禁止 /
-  async scheduling 無効（step計装の帰属を明確にするため）
+## Methods Decision Log (2026-07-12)
+- Pinned to vLLM v0.25.0 (commit 702f4814fe54fabff350d43cb753ae3e47c0c276);
+  instrumentation lives on the `instrumentation` branch of the fork IsseiHasegawa/vllm
+- Environment: RunPod A40 48GB, uniform across all experiments (1x; 2x for tp=2).
+  The benchmark client runs on the same Pod as the server (localhost)
+- D1: `--ignore-eos` on every run (controls the number of generated tokens across models)
+- D2: `--num-warmups 10`. Discard one throwaway run right after server startup
+- D3: The server is started per (model x TP configuration). Rate, dataset, and repetitions run against the same server
+- D4: Run attribution uses the manifest method (slice the phase JSONL by start/end timestamps)
+- D5: Primary metric is p95. p99 is a reference value with error bars over 3 repetitions (n=200)
+- D6: Repetitions use the same seed=42 (workload fixed; error bars reflect systematic noise only)
+- D7: Single-GPU experiments (S1, S2, S3, I1, I2) are consolidated into one session on the same instance
+- D8: `--no-enable-prefix-caching` required / `--disable-log-stats` forbidden /
+  async scheduling disabled (to keep step-instrumentation attribution unambiguous)
