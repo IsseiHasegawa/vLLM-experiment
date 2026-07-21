@@ -86,3 +86,6 @@ I1_rep3,I1,Qwen/Qwen2.5-7B-Instruct,random,512,128,1,5,3,200,42
 I2_rep1,I2,Qwen/Qwen2.5-7B-Instruct,random,128,512,1,5,1,200,42
 I2_rep2,I2,Qwen/Qwen2.5-7B-Instruct,random,128,512,1,5,2,200,42
 I2_rep3,I2,Qwen/Qwen2.5-7B-Instruct,random,128,512,1,5,3,200,42
+A1_r5_rep1,A1,Qwen/Qwen2.5-7B-Instruct,sharegpt,,,1,5,1,200,42
+A1_r5_rep2,A1,Qwen/Qwen2.5-7B-Instruct,sharegpt,,,1,5,2,200,42
+A1_r5_rep3,A1,Qwen/Qwen2.5-7B-Instruct,sharegpt,,,1,5,3,200,42
