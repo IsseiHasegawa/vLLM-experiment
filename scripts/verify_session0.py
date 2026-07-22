@@ -92,12 +92,12 @@ def main():
 
     # ---------- load ----------
     reqs, rfiles = load_jsonl([
-        os.path.join(args.phase_log_dir, "requests-*.jsonl"),
-        os.path.join(args.phase_log_dir, "requests-*.jsonl.gz"),
+        os.path.join(args.phase_log_dir, "requests*.jsonl"),
+        os.path.join(args.phase_log_dir, "requests*.jsonl.gz"),
     ])
     steps, sfiles = load_jsonl([
-        os.path.join(args.phase_log_dir, "steps-*.jsonl"),
-        os.path.join(args.phase_log_dir, "steps-*.jsonl.gz"),
+        os.path.join(args.phase_log_dir, "steps*.jsonl"),
+        os.path.join(args.phase_log_dir, "steps*.jsonl.gz"),
     ])
     reqs.sort(key=lambda r: r.get("ts", 0))
     print(f"loaded: {len(reqs)} request records from {len(rfiles)} file(s), "

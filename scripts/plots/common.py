@@ -257,9 +257,9 @@ def phase_records(run, kind="requests"):
     requests that finish early in a long run; the right edge is authoritative.
     """
     d = Path(run["results_dir"])
-    pats = [str(d / "phase_logs" / f"{kind}-*.jsonl"),
-            str(d / "phase_logs" / f"{kind}-*.jsonl.gz"),
-            str(d / f"{kind}-*.jsonl"), str(d / f"{kind}-*.jsonl.gz")]
+    pats = [str(d / "phase_logs" / f"{kind}*.jsonl"),
+            str(d / "phase_logs" / f"{kind}*.jsonl.gz"),
+            str(d / f"{kind}*.jsonl"), str(d / f"{kind}*.jsonl.gz")]
     recs = load_jsonl(pats)
     t0, t1 = run.get("start_ts"), run.get("end_ts")
     if t0 is None or t1 is None:
