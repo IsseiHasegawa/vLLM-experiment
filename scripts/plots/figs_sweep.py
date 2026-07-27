@@ -114,11 +114,57 @@ def fig06(runs, outdir):
 
 
 def fig07(runs, outdir):
-    return _overlay(runs, outdir, ["S1", "S4"],
-                    ["1 GPU", "2 GPUs (tensor parallel)"],
+    """GPU count. G1/G2/G4 are all measured on the same multi-GPU instance,
+    so the only difference between the series is the parallelism setting."""
+    groups = [g for g in ("G1", "G2", "G4") if select(runs, group=g)]
+    names = {"G1": "1 GPU (tp=1)", "G2": "2 GPUs (tp=2)",
+             "G4": "4 GPUs (tp=4)"}
+    if not groups:
+        print("  SKIP fig07: no G1/G2/G4 runs")
+        return None
+    return _overlay(runs, outdir, groups, [names[g] for g in groups],
                     "Effect of GPU count and tensor parallelism "
-                    "(Qwen2.5-7B, ShareGPT)",
-                    "fig07_gpu_count_comparison")
+                    "(Qwen2.5-7B, ShareGPT, single instance)",
+                    "fig07_gpu_count_comparison",
+                    fields=[("p95_ttft_ms", "TTFT p95 (ms)"),
+                            ("p95_tpot_ms", "TPOT p95 (ms/token)"),
+                            ("output_throughput", "Output throughput (tok/s)")])
 
 
-ALL = {1: fig01, 2: fig02, 3: fig03, 4: fig04, 6: fig06, 7: fig07}
+def fig10(runs, outdir):
+    """Closed-loop latency-throughput curve.
+
+    Each point fixes the number of in-flight requests, so unlike an open-loop
+    rate above capacity it has a well-defined steady state. The knee of this
+    curve is the defensible statement of the latency/throughput trade-off.
+    """
+    c2 = select(runs, group="C2")
+    if not c2:
+        print("  SKIP fig10: no C2 runs")
+        return None
+    import statistics as st
+    by = {}
+    for r in c2:
+        by.setdefault(r["max_concurrency"], []).append(r)
+    xs, ys, es, labels = [], [], [], []
+    for c in sorted(by, key=lambda x: int(x)):
+        thr = [r["bench"]["output_throughput"] for r in by[c]]
+        lat = [r["bench"]["p95_e2el_ms"] / 1000 for r in by[c]]
+        xs.append(st.mean(thr))
+        ys.append(st.mean(lat))
+        es.append(st.stdev(lat) if len(lat) > 1 else 0.0)
+        labels.append(c)
+
+    fig, ax = plt.subplots(figsize=(5.4, 3.6))
+    ax.errorbar(xs, ys, yerr=es, color=SERIES[0], marker=MARKERS[0])
+    for x, y, l in zip(xs, ys, labels):
+        ax.annotate(l, (x, y), textcoords="offset points", xytext=(5, -9),
+                    fontsize=7, color=C["grey"])
+    ax.set_xlabel("Output throughput (tok/s)")
+    ax.set_ylabel("End-to-end latency p95 (s)")
+    ax.set_title("Closed-loop latency vs throughput\n"
+                 "(Qwen2.5-7B, ShareGPT, 1 GPU; labels = concurrency limit)")
+    return save(fig, "fig10_closed_loop_tradeoff", outdir)
+
+
+ALL = {1: fig01, 2: fig02, 3: fig03, 4: fig04, 6: fig06, 7: fig07, 10: fig10}

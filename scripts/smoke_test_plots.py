@@ -32,14 +32,14 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 
 MANIFEST_COLS = ["run_id", "session", "start_ts", "end_ts", "model", "dataset",
-                 "tp", "request_rate", "rep", "command", "result_json",
-                 "status", "notes"]
+                 "tp", "request_rate", "max_concurrency", "instr", "rep",
+                 "command", "result_json", "status", "notes"]
 
 
 def build(tmp: Path, pilot: bool):
     rows = list(csv.DictReader(open(REPO / "configs" / "matrix.csv")))
     if pilot:
-        keep = {"S1_r5_rep1", "S1_r20_rep1", "I1_rep1", "I2_rep1"}
+        keep = {"S1_r5_rep1", "S1_r1_rep1", "I1_rep1", "I2_rep1"}
         rows = [r for r in rows if r["run_id"] in keep]
 
     base = tmp / "results" / "raw" / "sessionSYN"
@@ -65,8 +65,13 @@ def build(tmp: Path, pilot: bool):
     for r in rows:
         rid, rate, tp = r["run_id"], r["request_rate"], int(r["tp"])
         small = "0.5B" in r["model"]
-        requested = 200.0 if rate == "inf" else float(rate)
+        conc = (r.get("max_concurrency") or "").strip()
         capacity = (40.0 if small else 9.0) * tp      # saturation point
+        if conc:
+            # closed loop: throughput rises with concurrency then plateaus
+            requested = capacity * min(1.0, int(conc) / 24.0)
+        else:
+            requested = 200.0 if rate == "inf" else float(rate)
         achieved = min(requested, capacity)
         load = min(requested / capacity, 1.0)
         ttft = (8 if small else 45) * (1 + 6 * load ** 3)
@@ -77,7 +82,7 @@ def build(tmp: Path, pilot: bool):
         t0, t1 = t, t + dur
         t = t1 + 5
 
-        j = {"date": "synthetic", "model_id": r["model"], "num_prompts": 200,
+        j = {"date": "synthetic", "model_id": r["model"], "num_prompts": int(r.get("num_prompts") or 200),
              "request_rate": requested, "duration": dur, "completed": 200,
              "failed": 0, "total_input_tokens": 200 * inlen,
              "total_output_tokens": 200 * outlen,
@@ -166,8 +171,8 @@ def main():
         print(f"\n{len(pngs)} figures rendered:")
         for p in pngs:
             print(f"  {p}")
-        if rc == 0 and len(pngs) == 9:
-            print("\nSMOKE TEST: PASS (all 9 figures)")
+        if rc == 0 and len(pngs) >= 9:
+            print(f"\nSMOKE TEST: PASS ({len(pngs)} figures)")
         else:
             print(f"\nSMOKE TEST: CHECK (rc={rc}, {len(pngs)}/9 figures)")
         if args.keep:

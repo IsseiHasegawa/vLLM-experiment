@@ -49,11 +49,16 @@ from pathlib import Path
 
 MANIFEST_COLS = [
     "run_id", "session", "start_ts", "end_ts", "model", "dataset", "tp",
-    "request_rate", "rep", "command", "result_json", "status", "notes",
+    "request_rate", "max_concurrency", "instr", "rep", "command",
+    "result_json", "status", "notes",
 ]
 
 BENCH_FIXED = [
-    "--num-warmups", "10",
+    "--num-warmups", "30",
+    # Greedy decoding: the server's generation_config would otherwise apply
+    # temperature/top_p sampling, making runs non-reproducible. Output length
+    # is pinned by --ignore-eos, so this does not change the amount of work.
+    "--temperature", "0",
     "--ignore-eos",
     "--percentile-metrics", "ttft,tpot,itl,e2el",
     "--metric-percentiles", "50,95,99",
@@ -127,6 +132,12 @@ def build_bench_cmd(row, args, result_dir, result_filename):
                 "--random-output-len", row["output_len"]]
     else:
         raise SystemExit(f"{row['run_id']}: unknown dataset {row['dataset']}")
+    conc = (row.get("max_concurrency") or "").strip()
+    if conc:
+        # Closed loop: at most `conc` requests in flight, submitted as fast as
+        # completions allow. Every point then has a steady state, unlike an
+        # open-loop rate above capacity.
+        cmd += ["--max-concurrency", conc]
     cmd += BENCH_FIXED
     cmd += ["--result-dir", str(result_dir), "--result-filename", result_filename]
     return cmd
@@ -213,7 +224,10 @@ def main():
     # ---- plan: group consecutive rows by (model, tp) ----
     boots, cur_key, cur_rows = [], None, []
     for row in rows:
-        key = (row["model"], row["tp"])
+        # A server is reused only while model, parallelism AND the
+        # instrumentation switch stay the same; the C1 control needs a server
+        # started without VLLM_PHASE_LOG_DIR.
+        key = (row["model"], row["tp"], (row.get("instr") or "on").strip())
         if key != cur_key:
             if cur_rows:
                 boots.append((cur_key, cur_rows))
@@ -228,8 +242,8 @@ def main():
     print(f"[runner] phase logs -> {phase_log_dir}")
 
     if args.dry_run:
-        for (model, tp), group_rows in boots:
-            print(f"\n=== BOOT {model} tp={tp} ===")
+        for (model, tp, instr), group_rows in boots:
+            print(f"\n=== BOOT {model} tp={tp} instrumentation={instr} ===")
             print("  " + shlex.join(build_server_cmd(
                 model, tp, args.iteration_details, args.host, args.port)))
             for row in group_rows:
@@ -259,7 +273,7 @@ def main():
     server = None
     server_log = None
     try:
-        for bi, ((model, tp), group_rows) in enumerate(boots, 1):
+        for bi, ((model, tp, instr), group_rows) in enumerate(boots, 1):
             todo = [r for r in group_rows if r["run_id"] not in done]
             if not todo:
                 print(f"[runner] boot {bi}: all rows done, skipping boot")
@@ -267,14 +281,18 @@ def main():
 
             scmd = build_server_cmd(model, tp, args.iteration_details,
                                     args.host, args.port)
+            boot_env = dict(server_env)
+            if instr == "off":
+                boot_env.pop("VLLM_PHASE_LOG_DIR", None)
             slog_path = results_dir / (
-                f"server_{model.split('/')[-1]}_tp{tp}_{int(time.time())}.log")
+                f"server_{model.split('/')[-1]}_tp{tp}_instr-{instr}"
+                f"_{int(time.time())}.log")
             print(f"\n[runner] boot {bi}/{len(boots)}: {shlex.join(scmd)}")
             print(f"[runner] server log -> {slog_path}")
             server_log = open(slog_path, "w")
             server = subprocess.Popen(scmd, stdout=server_log,
                                       stderr=subprocess.STDOUT,
-                                      env=server_env, start_new_session=True)
+                                      env=boot_env, start_new_session=True)
             ok, msg = wait_ready(
                 f"http://{args.host}:{args.port}/health", server,
                 args.ready_timeout)
@@ -284,7 +302,8 @@ def main():
                 append_manifest(args.manifest, {
                     "run_id": f"BOOT{bi}", "session": args.session,
                     "start_ts": f"{time.time():.3f}", "end_ts": "",
-                    "model": model, "tp": tp, "status": "boot_fail",
+                    "model": model, "tp": tp, "instr": instr,
+                    "status": "boot_fail",
                     "notes": msg,
                 })
                 stop_process_group(server, "server", 30)
@@ -294,7 +313,7 @@ def main():
             # sanity: the un-instrumented step path must not be active
             time.sleep(2)
             server_log.flush()
-            if "PHASE-INSTR: batch-queue" in open(slog_path).read():
+            if instr == "on" and "PHASE-INSTR: batch-queue" in open(slog_path).read():
                 raise SystemExit(
                     "FATAL: batch-queue path active; step instrumentation "
                     "would be silent. Check --no-async-scheduling.")
@@ -313,7 +332,7 @@ def main():
                     "run_id": wname, "session": args.session,
                     "start_ts": f"{t0:.3f}", "end_ts": f"{time.time():.3f}",
                     "model": model, "dataset": "random", "tp": tp,
-                    "request_rate": "inf", "rep": "0",
+                    "request_rate": "inf", "instr": instr, "rep": "0",
                     "command": shlex.join(wcmd),
                     "status": "boot_warmup", "notes": "discard",
                 })
@@ -341,13 +360,17 @@ def main():
                 if ach is not None:
                     notes.append(f"achieved={ach:.2f}")
                     rr = row["request_rate"]
-                    if rr not in ("inf", "") and ach < 0.9 * float(rr):
+                    if (not (row.get("max_concurrency") or "").strip()
+                            and rr not in ("inf", "")
+                            and ach < 0.9 * float(rr)):
                         notes.append("RATE_SHORTFALL")
                 append_manifest(args.manifest, {
                     "run_id": rid, "session": args.session,
                     "start_ts": f"{t0:.3f}", "end_ts": f"{t1:.3f}",
                     "model": model, "dataset": row["dataset"], "tp": tp,
-                    "request_rate": row["request_rate"], "rep": row["rep"],
+                    "request_rate": row["request_rate"],
+                    "max_concurrency": row.get("max_concurrency", ""),
+                    "instr": instr, "rep": row["rep"],
                     "command": shlex.join(cmd),
                     "result_json": str(rjson), "status": status,
                     "notes": ";".join(notes),

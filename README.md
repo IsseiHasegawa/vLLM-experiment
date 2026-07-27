@@ -24,3 +24,27 @@
 - D12 (2026-07-20): D7 revised for a 3h/day schedule: the 7B block (S1, S2, I1, I2; 42 runs)
   and the 0.5B block (S3; 24 runs) run on separate instances. Day 2 begins by re-measuring
   the S1 r=5 anchor point (3 reps) to demonstrate cross-instance consistency
+- D13 (2026-07-27): Rate grid revised to {1,2,3,4,5,6,8,inf} after the pilot measured a
+  sustainable capacity of 3.2 req/s (7B/ShareGPT) and 4.5 req/s (7B/random)
+- D14 (2026-07-27): **Revises D6.** Repetitions use seeds 1/2/3 instead of a fixed 42, with
+  the same seed set reused for every condition. Comparisons stay paired, and the error bars
+  now include prompt sampling and arrival jitter rather than system noise alone
+- D15 (2026-07-27): `--temperature 0` on every run. The server's generation_config would
+  otherwise apply sampling; output length is pinned by `--ignore-eos`, so the amount of work
+  is unchanged and runs become reproducible
+- D16 (2026-07-27): `--num-warmups` raised 10 -> 30; the pilot showed an elevated first
+  quarter of prefill times at 10
+- D17 (2026-07-27): C1 control — the same condition is measured with the phase logger
+  enabled (A1a) and disabled (C1off), adjacent in time, to bound the instrumentation's
+  effect on what it measures
+- D18 (2026-07-27): C2 closed-loop control with a fixed concurrency limit. Above capacity an
+  open-loop system has no steady state, so open-loop overload points are reported as
+  burst transients and C2 supplies the steady-state latency-throughput curve
+- D19 (2026-07-27): GPU count is compared **within one multi-GPU instance** (G1/G2/G4),
+  replacing the rev. 1 plan of comparing S1 on a 1-GPU pod with S4 on a 2-GPU pod
+- D20 (2026-07-27): `HF_HOME=/root/hf_cache` (container disk). `/workspace` is a 50 GB
+  network volume of which the venv occupies 21 GB; model weights there fail with
+  `Disk quota exceeded`
+- D21 (2026-07-27): The runner keeps launching one `vllm bench serve` process per run even
+  though ~78 % of wall time is interpreter startup. Process isolation and the exact
+  reproducibility of each recorded command outweigh the ~4 h saved by an in-process loop

@@ -107,10 +107,15 @@ def load_runs(repo=".", results_dirs=None, matrix="configs/matrix.csv",
         for row in csv.DictReader(f):
             cfg[row["run_id"]] = row
 
+    # Every manifest*.csv is read, so the pilot campaign and the main
+    # campaign can coexist without one hiding the other.
     man = {}
+    mpaths = sorted(glob.glob(str(repo / "results" / "manifest*.csv")))
     mpath = repo / manifest
-    if mpath.exists():
-        with open(mpath, newline="") as f:
+    if str(mpath) not in mpaths and mpath.exists():
+        mpaths.append(str(mpath))
+    for mp in mpaths:
+        with open(mp, newline="") as f:
             for row in csv.DictReader(f):
                 if row.get("status") == "ok":
                     man[row["run_id"]] = row
@@ -137,7 +142,7 @@ def load_runs(repo=".", results_dirs=None, matrix="configs/matrix.csv",
                 r["start_ts"] = _num(man[rid]["start_ts"])
                 r["end_ts"] = _num(man[rid]["end_ts"])
                 r["notes"] = man[rid].get("notes", "")
-            elif mpath.exists() and man:
+            elif mpaths and man:
                 # Manifest exists but this run is not marked ok -> skip it.
                 continue
             runs[rid] = r
