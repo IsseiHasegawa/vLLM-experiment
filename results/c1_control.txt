@@ -1,0 +1,18 @@
+C1 control - instrumentation overhead
+  enabled  (A1a):   n=3
+  disabled (C1off): n=3
+
+metric                    logging on   logging off       delta       t       p
+------------------------------------------------------------------------------
+TTFT p50                 100.33±9.94    97.35±8.10       3.06%    0.40   0.687
+TTFT p95                 205.34±9.40   201.86±13.23       1.73%    0.37   0.710
+TPOT p50                  38.92±1.85    38.65±1.57       0.70%    0.19   0.847
+TPOT p95                  46.63±0.90    46.15±1.25       1.03%    0.54   0.591
+Request throughput         3.19±0.18     3.20±0.18      -0.27%   -0.06   0.953
+Output throughput        611.37±28.05   613.02±29.41      -0.27%   -0.07   0.944
+Run duration              62.73±3.48    62.57±3.56       0.26%    0.06   0.955
+
+largest relative difference: +3.06% (practical-equivalence bound ±2.0%)
+VERDICT: no instrumentation effect detected. All metrics agree within ±2.0% or are indistinguishable from noise.
+
+logging volume in the enabled arm: 690 request records, 5660 step records over 3 runs
