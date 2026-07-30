@@ -22,7 +22,7 @@
 - D11 (2026-07-20): EngineCore does not run atexit handlers on termination, so the phase
   logger flushes on a 1s background timer; the runner waits 3s before stopping a server
 - D12 (2026-07-20): D7 revised for a 3h/day schedule: the 7B block (S1, S2, I1, I2; 42 runs)
-  and the 0.5B block (S3; 24 runs) run on separate instances. Day 2 begins by re-measuring
+  and the 0.5B block (S3; 27 runs in rev. 2) run on separate instances. Day 2 begins by re-measuring
   the S1 r=5 anchor point (3 reps) to demonstrate cross-instance consistency
 - D13 (2026-07-27): Rate grid revised to {1,2,3,4,5,6,8,inf} after the pilot measured a
   sustainable capacity of 3.2 req/s (7B/ShareGPT) and 4.5 req/s (7B/random).
@@ -71,16 +71,23 @@
   `achieved = 200 / (arrival span + drain)`, so the flag fires at 58 % utilisation
   (S2 r=8: 6.83 vs capacity 13.8). Arrival span / expected span = 1.00 in all 78
   open-loop runs, so arrivals were always delivered as specified. The §6.4 gate
-  becomes "span ratio == 1.00"; figure 3 must define achieved rate over the
-  arrival window, excluding drain.
+  becomes "span ratio == 1.00". Figure 3 still plots the client's own
+  `request_throughput`, which contains the drain bias: the operational definition of
+  the achieved rate and of the saturation point is deliberately left to the 8/3
+  analysis task rather than fixed in code now, and the figure must not be read as a
+  capacity measurement until then.
 - D25 (2026-07-29): Do not quote rinf as capacity for ShareGPT. Output length p95/p50
   is 5.7x (max 1642 tokens), so a run ends when its longest request ends; S1_rinf
   varies 3.23/4.57/3.56 across seeds (41 %). Dataset effect is reported at matched
   rates or from closed-loop C2.
 - D26 (2026-07-29): The ShareGPT sampler admits only prompts <= ~1024 tokens
   (max realised n_prompt = 1010 vs 66 076 in the raw file). The "realistic
-  conversation" claim is bounded accordingly; figure 5 shows both distributions.
-  Confirm the exact filter in benchmarks/datasets.py before writing Methods.
+  conversation" claim is bounded accordingly. **Implemented 2026-07-30:** figure 5 now
+  overlays the nominal distribution (results/dataset_stats.json, from the source file)
+  with the realised one (n_prompt / n_gen from the phase logs of S1 and S2, n=4800 each).
+  ShareGPT nominal input p50/p95/max = 145/938/66076 against realised 135/767/1010, so
+  plotting the nominal alone would overstate the served tail by 65x. Confirm the exact
+  filter in benchmarks/datasets.py before writing Methods.
 - D27 (2026-07-29): 0.5B saturates at ~18-20 req/s with SM <= 59 % and memory
   controller <= 45 %, while server CPU doubles vs 7B (169 % vs 55 %). Hypothesis:
   per-step framework overhead, not the GPU, is the ceiling at small model size.
@@ -92,8 +99,9 @@
   and because the distortion grows with rate, figure 9 would have shown utilisation
   *falling* under load. The window is recovered from the request log (records inside
   the manifest window, ordered by completion, first `--num-warmups` dropped); runs with
-  no phase log (C1off) fall back to `end_ts - duration`. Corrected mean SM utilisation
-  at rate 5 on 7B/ShareGPT: 87.5 %, not 41.0 %
+  no phase log (C1off) fall back to `end_ts - duration`. Corrected mean SM utilisation,
+  averaged over the three repetitions: 86.7 % not 39.3 % at 7B/ShareGPT rate 5 (2.2x),
+  and 53.3 % not 5.3 % at 0.5B rate 32 (10.0x)
 - D29 (2026-07-29): **Warm-up requests are excluded from phase-log analysis.** The
   window contains `num_prompts + num_warmups` = 230 records per run; the leading 30 are
   dropped by completion order, which yields exactly 200 for all 88 instrumented runs.
@@ -117,3 +125,14 @@
   S2's grid stopped at ~50 % utilisation (D13). r=5 overlaps session A's S2_r5 so the two
   instances can be cross-checked; the group is named separately because it is a different
   instance and must not be silently merged into the S2 series
+- D33 (2026-07-30): `cpu_total`, `cpu_max_core` and `ram_used_gb` in the resource logs
+  are **host-wide** (`psutil` sees all 96 cores of the physical machine), not the
+  container's 9 vCPUs, so they include other tenants: `ram_used_gb` reads 60 GB on a
+  50 GB pod and `cpu_max_core` sits at 100 % while idle. Bottleneck claims use
+  `cpu_server_pct` / `cpu_client_pct`, which are per-process and clean (100 % = one
+  core). Measured on session A the client never exceeded ~210 % of 900 %, so the
+  harness was never the bottleneck
+- D34 (2026-07-30): The runner's `HF_HOME` fallback was `/workspace/hf_cache`, which is
+  exactly the path D20 forbids; launching the runner from a shell that had not exported
+  `HF_HOME` would have reproduced `Disk quota exceeded` on the 7B download. The default
+  is now `/root/hf_cache`

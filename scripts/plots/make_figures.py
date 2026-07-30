@@ -54,7 +54,7 @@ def main():
             try:
                 p = fig05_datasets.fig05(
                     os.path.join(args.repo, "results", "dataset_stats.json"),
-                    args.outdir)
+                    args.outdir, repo=args.repo)
                 (made if p else skipped).append(5)
             except Exception:
                 traceback.print_exc()

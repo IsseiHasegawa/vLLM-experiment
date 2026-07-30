@@ -219,7 +219,7 @@ def main():
         "VLLM_PHASE_LOG_DIR", str(results_dir / "phase_logs"))
     server_env = dict(os.environ)
     server_env["VLLM_PHASE_LOG_DIR"] = phase_log_dir
-    server_env.setdefault("HF_HOME", "/workspace/hf_cache")
+    server_env.setdefault("HF_HOME", "/root/hf_cache")  # D20: /workspace is a 50 GB quota
 
     # ---- plan: group consecutive rows by (model, tp) ----
     boots, cur_key, cur_rows = [], None, []

@@ -27,7 +27,8 @@ rev. 1. The redesign is a direct response to each.
 
 **Finding 1 — the rate grid missed the operating region.** Sustainable capacity
 on one A40 is **3.2 req/s** (7B, ShareGPT) and **4.5 req/s** (7B, random
-256/128). The rev. 1 grid {1,2,5,10,20} put three of five points deep in the
+256/128). [Session A: the 3.2 figure is confirmed; the 4.5 figure was a drain
+artefact and the true value is ~13.8 req/s - see D24/D28/D32.] The rev. 1 grid {1,2,5,10,20} put three of five points deep in the
 saturated plateau. New grid: **{1,2,3,4,5,6,8,inf}**.
 
 **Finding 2 — above capacity there is no steady state.** Queueing delay is ~0
@@ -260,7 +261,7 @@ python3 scripts/run_experiments.py \
 
 | Session | `--only` | Runs | Boots |
 |---|---|---|---|
-| A | `A1a,C1off,S1,S2,I1,I2,A1b,P0,S3` | 91 | 4 |
+| A | `P0` then `A1a,C1off,S1,S2,I1,I2,A1b,S3` | 91 | 5 |
 | B | `A1c,S2b,C2` | 39 | 1 |
 | C | `A1d,G1,G2` (+`,G4`) | 51 (75) | 2 (3) |
 
