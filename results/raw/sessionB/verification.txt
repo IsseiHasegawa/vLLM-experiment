@@ -1,0 +1,29 @@
+loaded: 50 request records from 1 file(s), 132 step records from 1 file(s)
+
+[PASS] requests file exists
+[PASS] steps file exists
+[PASS] request records >= 50  ->  50 records (warmups/test request included)
+[PASS] V1a prefill+decode == inference (all records)  ->  exact
+[PASS] V1b n_cached == 0 (prefix caching disabled)  ->  all zero
+[PASS] V1c e2e >= queued+inference (5ms tol, cross-clock)
+[PASS] V1d ignore-eos: all measured n_gen == 64  ->  observed n_gen values: [64]
+[PASS] V1e no negative durations
+[PASS] V4a steps decode-token accounting matches requests  ->  steps=3150 vs expected=3150
+[PASS] V4b steps prefill-token accounting matches requests  ->  steps=6400 vs expected=6400
+[PASS] V4c all exec_s > 0
+[PASS] V4d kv_usage in [0,1] (or -1 sentinel)  ->  min=0.000 max=0.012
+[PASS] V2 queue: ours vs Prometheus mean  ->  ours=72.04ms prom=72.04ms (count 50 vs 50)
+[PASS] V2 prefill: ours vs Prometheus mean  ->  ours=238.24ms prom=238.24ms (count 50 vs 50)
+[PASS] V2 decode: ours vs Prometheus mean  ->  ours=2135.56ms prom=2135.56ms (count 50 vs 50)
+[PASS] V3a client TTFT ~= server queued+prefill (+eps)  ->  client=353.96ms server=310.29ms eps=+43.68ms
+[PASS] V3b client TPOT ~= server mean_tpot  ->  client=32.303ms server=33.898ms
+[FAIL] V3c bench completed == num-measured  ->  completed=20
+
+--- summary of the measured run (last 50 requests, server-side) ---
+  queued_s   mean=   72.04ms  p95=  276.71ms
+  prefill_s  mean=  238.24ms  p95=  276.46ms
+  decode_s   mean= 2135.56ms  p95= 2285.40ms
+  e2e_s      mean= 3387.35ms  p95= 4101.50ms
+  steps: 132  (mean exec=38.34ms, mean sched=0.808ms)
+
+=== RESULT: 1 FAIL (17 pass, 0 warn) ===
