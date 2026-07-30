@@ -161,25 +161,52 @@ def main():
 
     tmp = Path(tempfile.mkdtemp(prefix="vllm-smoke-"))
     try:
+        pilot_mode = args.pilot
         n = build(tmp, args.pilot)
         print(f"synthetic campaign: {n} runs in {tmp}\n")
         out = tmp / "figures"
-        rc = subprocess.run(
+        proc = subprocess.run(
             [sys.executable, str(REPO / "scripts" / "plots" / "make_figures.py"),
-             "--repo", str(tmp), "--outdir", str(out)]).returncode
+             "--repo", str(tmp), "--outdir", str(out)],
+            capture_output=True, text=True)
+        rc = proc.returncode
+        print(proc.stdout, end="")
+        if proc.stderr.strip():
+            print(proc.stderr, end="")
         pngs = sorted(out.glob("*.png"))
         print(f"\n{len(pngs)} figures rendered:")
         for p in pngs:
             print(f"  {p}")
-        if rc == 0 and len(pngs) >= 9:
-            print(f"\nSMOKE TEST: PASS ({len(pngs)} figures)")
-        else:
-            print(f"\nSMOKE TEST: CHECK (rc={rc}, {len(pngs)}/9 figures)")
+
+        # A figure script that receives no data still writes an empty PNG, so
+        # counting files is not enough: assert that runs were actually loaded
+        # and that every figure the synthetic campaign can support was made.
+        # Without this the test reported success while make_figures logged
+        # "0 completed runs" and produced blank axes.
+        expect = 5 if pilot_mode else 10
+        loaded = 0
+        for line in proc.stdout.splitlines():
+            if line.strip().endswith("completed runs"):
+                try:
+                    loaded = int(line.split()[0])
+                except ValueError:
+                    pass
+        problems = []
+        if rc != 0:
+            problems.append(f"make_figures rc={rc}")
+        if loaded == 0:
+            problems.append("no runs loaded (check load_runs / manifest keys)")
+        if len(pngs) < expect:
+            problems.append(f"{len(pngs)} figures, expected >= {expect}")
+        if problems:
+            print(f"\nSMOKE TEST: FAIL - " + "; ".join(problems))
+            return 1
+        print(f"\nSMOKE TEST: PASS ({loaded} runs, {len(pngs)} figures)")
         if args.keep:
             print(f"\nkept: {tmp}")
             if sys.platform == "darwin":
                 subprocess.run(["open", str(out)])
-        return 0 if rc == 0 else 1
+        return 0
     finally:
         if not args.keep:
             shutil.rmtree(tmp, ignore_errors=True)

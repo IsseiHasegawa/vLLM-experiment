@@ -116,7 +116,7 @@ def load_runs(repo=".", results_dirs=None, matrix="configs/matrix.csv",
     # run_id alone let a pilot row supply the timing window for a session A
     # bench file, which silently emptied every phase-log slice for those ids.
     man = {}
-    man_any = {}
+
     mpaths = sorted(glob.glob(str(repo / "results" / "manifest*.csv")))
     mpath = repo / manifest
     if str(mpath) not in mpaths and mpath.exists():
@@ -129,7 +129,7 @@ def load_runs(repo=".", results_dirs=None, matrix="configs/matrix.csv",
                 rj = row.get("result_json") or ""
                 camp = Path(rj).parent.parent.name if rj else ""
                 man[(row["run_id"], camp)] = row
-                man_any.setdefault(row["run_id"], row)
+
 
     if results_dirs is None:
         results_dirs = sorted(glob.glob(str(repo / "results" / "raw" / "*")))
@@ -150,6 +150,19 @@ def load_runs(repo=".", results_dirs=None, matrix="configs/matrix.csv",
             r["bench"] = bench
             r["results_dir"] = d
             mrow = man.get((rid, Path(d).name))
+            if mrow is None:
+                # `result_json` does not always carry the campaign directory
+                # (a bare filename gives an empty campaign key), so fall back
+                # to the run_id when that is unambiguous. When several
+                # campaigns claim the same run_id and none of them names this
+                # directory, skip rather than guess: attaching the wrong
+                # timing window is what D30 was about.
+                cands = [v for k, v in man.items() if k[0] == rid]
+                if len(cands) == 1:
+                    mrow = cands[0]
+                elif cands:
+                    print(f"  WARN {rid}: {len(cands)} manifest rows, none for "
+                          f"{Path(d).name}; skipped to avoid mis-attribution")
             if mrow is not None:
                 r["start_ts"] = _num(mrow["start_ts"])
                 r["end_ts"] = _num(mrow["end_ts"])

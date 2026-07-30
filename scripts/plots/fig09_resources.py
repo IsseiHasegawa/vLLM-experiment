@@ -90,6 +90,7 @@ def fig09(runs, outdir, group="S1"):
     # The container has 9 vCPUs, i.e. a 900 % ceiling. Stating it in text
     # rather than drawing the line keeps the axis readable: the server sits
     # near 40 % on 7B and 144 % on 0.5B, so a line at 900 would flatten both.
+    # Subtract ~2-3 % from the server series for the logger's own cost (D36).
     a2.annotate("ceiling: 9 vCPU = 900 %", xy=(0.02, 0.93),
                 xycoords="axes fraction", fontsize=7, color=C["grey"])
     a2.set_xlabel("Request rate (req/s)")

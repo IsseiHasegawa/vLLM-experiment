@@ -144,3 +144,24 @@
   S3's, i.e. the 0.5B server spends 3.6x the CPU of the 7B server while leaving the GPU at
   53 % (D27). The 900 % ceiling (9 vCPU) is stated in the panel as text rather than drawn,
   which would flatten both series
+- D36 (2026-07-30): **The resource logger counts itself as a server process.** It is
+  launched with `sys.executable` = `/workspace/vllm/.venv/bin/python`, whose path contains
+  "vllm", so `classify_procs` files it under `server`. Measured from the samples after each
+  server is stopped, the offset is **1-4 % of one core**. Left uncorrected on purpose:
+  changing the instrumentation between sessions would break comparability for a 2-3 %
+  offset on a secondary metric, and the idle tail of every resources CSV gives the baseline
+  if it is ever needed. It does not affect D27 - subtracting it makes the 0.5B/7B server-CPU
+  ratio slightly larger (3.8x), not smaller
+- D37 (2026-07-30): **The smoke test could not fail, and did not.** `make_figures` writes an
+  empty PNG when a figure receives no data, and the test only counted files, so when the
+  D30 manifest keying broke `load_runs` for the synthetic campaign (`result_json` there is a
+  bare filename, giving an empty campaign key) it reported "rc=0, 8/9 figures" while every
+  panel was blank and 0 runs had loaded. `load_runs` now falls back to the run_id when it is
+  unambiguous and skips with a WARN only when several campaigns claim it; the smoke test
+  asserts a non-zero loaded-run count and the full figure set, and returns non-zero
+  otherwise. Verified: it fails loudly when `load_runs` is broken again on purpose
+- D38 (2026-07-30): `--ready-timeout` default raised 900 s -> 1800 s. Cold-pod boot is
+  dominated by `import vllm` off the network volume (session A's first boot: 588 s total,
+  of which ~400 s import, with engine init only 138 s), and session C adds a 15 GB weight
+  download and NCCL init across 2-4 workers. A false timeout costs a whole boot's worth of
+  runs; a generous one costs nothing unless the server is genuinely broken

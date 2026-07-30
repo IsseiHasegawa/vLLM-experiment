@@ -203,7 +203,12 @@ def main():
     ap.add_argument("--no-resource-logger", action="store_true")
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8000)
-    ap.add_argument("--ready-timeout", type=int, default=900)
+    # 1800 s, not 900: the cold-pod boot is dominated by `import vllm` from
+    # the network volume (~400 s in session A) and session C adds a 15 GB
+    # weight download plus NCCL init across 2-4 workers. A false timeout
+    # costs a whole boot's worth of runs; an over-long one costs nothing
+    # unless the server is genuinely broken.
+    ap.add_argument("--ready-timeout", type=int, default=1800)
     args = ap.parse_args()
 
     only_groups = set(filter(None, args.only.split(",")))

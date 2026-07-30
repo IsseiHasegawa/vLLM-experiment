@@ -225,6 +225,11 @@ are forgetting to terminate a pod and losing a long session to a mistake.
    share one GPU type.
 3. Connect -> **Enable web terminal**. SSH keys are not used.
 4. `nvidia-smi`; for tp>1 also `nvidia-smi topo -m`.
+5. **Session C only:** `nvidia-smi -L | wc -l` before starting. Run
+   `--only A1d,G1,G2,G4` only if it prints 4; with 2 GPUs use
+   `--only A1d,G1,G2` and take the tp=4 fallback in section 8. The runner does
+   not pre-check the GPU count, so a tp=4 boot on a 2-GPU pod just fails after
+   the ready timeout.
 
 ```bash
 tmux new -s sess
@@ -272,12 +277,39 @@ where it stopped if interrupted (rows already `ok` are skipped).
 
 **In session A, stop after P0 and read the probe.** If the measured capacity is
 far from ~24 req/s, adjust the S3 grid in `make_matrix.py`, regenerate, and
-continue with `--only S3`.
+continue with `--only S3`. (Done on 2026-07-29: probe read 17.27 req/s, the grid
+was kept - see D13.)
+
+**Validate the instrumentation on every new pod (2 min, second terminal).** The
+torch CUDA build follows the host driver (D22), so the phase logger has to be
+re-checked per instance. A few minutes after boot 1's warm-up, while the server
+is still up and the phase log holds only warm-up records:
+
+```bash
+python3 scripts/verify_session0.py \
+  --phase-log-dir results/raw/sessionX/phase_logs \
+  --bench-json results/raw/sessionX/bench/BOOT1_Qwen2.5-7B-Instruct_tp1.json \
+  --metrics-url http://localhost:8000/metrics --expect-output-len 64 \
+  | tee results/raw/sessionX/verification.txt
+```
+
+V2 cross-checks the phase log against vLLM's own Prometheus histograms, which is
+an independent oracle; it only works while the server is running. Expect 0 FAIL.
+Run it later in the session and V1d will fail harmlessly, because by then the log
+also holds ShareGPT requests whose output lengths vary.
+
+**Session C: pass `--ready-timeout 2400`** if the first boot is slower than
+expected; the default is 1800 s (D38).
 
 ### 6.3 End of every session (never skip)
 
 ```bash
 cd /workspace/vLLM-experiment
+# session A only: run the C1 analysis before gzip, while the pod is still up,
+# so a problem can still be re-measured
+python3 scripts/analyze_c1.py --repo . --out results/c1_control.txt
+date -u > results/raw/sessionX/SESSION_END.txt
+git -C /workspace/vllm log --oneline -3 > results/raw/sessionX/vllm_commit.txt
 gzip -f results/raw/sessionX/phase_logs/*.jsonl
 nvidia-smi > results/raw/sessionX/nvidia_smi.txt
 nvidia-smi topo -m > results/raw/sessionX/topo.txt      # tp>1
