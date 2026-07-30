@@ -77,15 +77,24 @@ def fig09(runs, outdir, group="S1"):
     a1.legend()
 
     # ---- CPU ---------------------------------------------------------------
-    _draw(a2, _by_rate(runs, group, "cpu_total"), "host CPU (mean of cores)",
-          SERIES[1], MARKERS[1])
-    _draw(a2, _by_rate(runs, group, "cpu_max_core"), "busiest core",
-          SERIES[2], MARKERS[2], "--")
+    # Only the per-process counters are used. cpu_total and cpu_max_core are
+    # host-wide (psutil sees all 96 cores of the physical machine, not the
+    # container's 9 vCPUs) and are dominated by co-tenants: cpu_total is flat
+    # at 5-8 % regardless of load and cpu_max_core sits near 100 % even at
+    # idle. Plotting them would show two meaningless flat lines and hide the
+    # server-side trend that the bottleneck analysis rests on. See D33.
+    _draw(a2, _by_rate(runs, group, "cpu_server_pct"),
+          "vLLM server (% of one core)", SERIES[1], MARKERS[1])
     _draw(a2, _by_rate(runs, group, "cpu_client_pct"),
           "benchmark client (% of one core)", SERIES[4], MARKERS[4], ":")
+    # The container has 9 vCPUs, i.e. a 900 % ceiling. Stating it in text
+    # rather than drawing the line keeps the axis readable: the server sits
+    # near 40 % on 7B and 144 % on 0.5B, so a line at 900 would flatten both.
+    a2.annotate("ceiling: 9 vCPU = 900 %", xy=(0.02, 0.93),
+                xycoords="axes fraction", fontsize=7, color=C["grey"])
     a2.set_xlabel("Request rate (req/s)")
-    a2.set_ylabel("CPU (%)")
-    a2.set_title("Host CPU")
+    a2.set_ylabel("CPU (% of one core)")
+    a2.set_title("Process CPU (per-process, container-attributable)")
     a2.legend()
 
     if not any_data:

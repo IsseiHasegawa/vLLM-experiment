@@ -136,3 +136,11 @@
   exactly the path D20 forbids; launching the runner from a shell that had not exported
   `HF_HOME` would have reproduced `Disk quota exceeded` on the 7B download. The default
   is now `/root/hf_cache`
+- D35 (2026-07-30): **Figure 9's CPU panel plots the per-process counters.** It previously
+  drew `cpu_total` and `cpu_max_core`, which D33 shows are host-wide: measured across S1,
+  `cpu_total` is flat at 5-8 % and `cpu_max_core` sits at 99-100 % at every rate, so the
+  panel carried two meaningless lines while omitting the series the bottleneck argument
+  rests on. `cpu_server_pct` rises 28 % -> 40 % across S1's grid and 65 % -> 144 % across
+  S3's, i.e. the 0.5B server spends 3.6x the CPU of the 7B server while leaving the GPU at
+  53 % (D27). The 900 % ceiling (9 vCPU) is stated in the panel as text rather than drawn,
+  which would flatten both series
