@@ -118,6 +118,7 @@ percentiles 50/95/99, 3 repetitions with seeds 1/2/3.
 | C2 | 21 | 7B | sharegpt | 1 | concurrency in {1,2,4,8,16,32,64} | Closed-loop control |
 | S2b | 15 | 7B | random 256/128 | 1 | r in {5,10,12,16,20} | Extends S2 past 50 % utilisation (D32) |
 | A1d | 3 | 7B | sharegpt | 1 | r=5 | Anchor for session C |
+| C2x | 3 | 7B | sharegpt | 1 | concurrency=128 | Right edge of figure 10 (D42) |
 | G1 | 24 | 7B | sharegpt | 1 | full grid | GPU-count baseline, on the multi-GPU instance |
 | G2 | 24 | 7B | sharegpt | 2 | full grid | tp=2 |
 | G4 | 24 | 7B | sharegpt | 4 | full grid | tp=4, only if 4 GPUs are secured |
@@ -176,14 +177,14 @@ discussed rather than hidden.
 | 7/28 Tue | Conference. Optional: review the diff, read the vLLM paper | — |
 | 7/29 Wed | **Session A** — 91 runs, 1xA40, ~7 h, mostly unattended | 1x |
 | 7/30 Thu | **Session B** — 39 runs (C2 + S2b), ~3.5 h; start analysis | 1x |
-| 7/31 Fri | **Session C** — 51 runs (tp=1/2) or 75 (tp=1/2/4), 4.5-6 h | 2x/4x |
+| 7/31 Fri | **Session C** — 54 runs (tp=1/2) or 78 (tp=1/2/4, incl. C2x), 5-7 h | 2x/4x |
 | 8/1 Sat | Analysis: C1 verdict, anchors/drift, figures 1-4, 6 | — |
 | 8/2 Sun | Analysis: figures 7, 8, 9, 10 | — |
 | 8/3 Mon | Analysis: bottleneck synthesis; operational definition of the saturation point | — |
-| 8/4 Tue | Buffer / re-measurement. **Data freeze** at end of day | maybe |
-| 8/5 Wed | Hand results to Claude -> English draft -> read, list questions | — |
-| 8/6 Thu | Write: Abstract + Introduction | — |
-| 8/7 Fri | Write: Background & Related Work | — |
+| 8/4 Tue | Buffer / re-measurement day 1 | maybe |
+| 8/5 Wed | Buffer day 2. **Data freeze** at end of day | maybe |
+| 8/6 Thu | Hand results to Claude -> English draft -> read, list questions | — |
+| 8/7 Fri | Write: Abstract + Introduction + Background (thin, ~0.5 p) | — |
 | 8/8 Sat | Write: Methodology (controls, C1 table, steady-state caveat) | — |
 | 8/9 Sun | Write: Results + Bottleneck Analysis | — |
 | 8/10 Mon | Write: Discussion + Limitations + Conclusion + acknowledgment | — |
@@ -213,6 +214,16 @@ are forgetting to terminate a pod and losing a long session to a mistake.
 
 ---
 
+### Report format (decided 2026-07-31)
+
+Paper-style (IMRaD) but sized for a screening task, not a venue: 6-8 pages of
+body text plus the 10 figures and an appendix. Markdown -> PDF; no LaTeX.
+Related Work stays thin (~0.5 p: vLLM/PagedAttention, Orca, DistServe).
+Methodology keeps the validity material (instrumentation design, Prometheus
+cross-check, C1, anchors) but states it compactly; it is the differentiator,
+not the headline. Results let the figures speak - one paragraph per figure.
+References: hand-written list, <= 10 entries.
+
 ## 6. Runbooks
 
 ### 6.1 Start of every GPU session
@@ -226,8 +237,8 @@ are forgetting to terminate a pod and losing a long session to a mistake.
 3. Connect -> **Enable web terminal**. SSH keys are not used.
 4. `nvidia-smi`; for tp>1 also `nvidia-smi topo -m`.
 5. **Session C only:** `nvidia-smi -L | wc -l` before starting. Run
-   `--only A1d,G1,G2,G4` only if it prints 4; with 2 GPUs use
-   `--only A1d,G1,G2` and take the tp=4 fallback in section 8. The runner does
+   `--only A1d,C2x,G1,G2,G4` only if it prints 4; with 2 GPUs use
+   `--only A1d,C2x,G1,G2` and take the tp=4 fallback in section 8. The runner does
    not pre-check the GPU count, so a tp=4 boot on a 2-GPU pod just fails after
    the ready timeout.
 
@@ -268,7 +279,7 @@ python3 scripts/run_experiments.py \
 |---|---|---|---|
 | A | `P0` then `A1a,C1off,S1,S2,I1,I2,A1b,S3` | 91 | 5 |
 | B | `A1c,S2b,C2` | 39 | 1 |
-| C | `A1d,G1,G2` (+`,G4`) | 51 (75) | 2 (3) |
+| C | `A1d,C2x,G1,G2` (+`,G4`) | 54 (78) | 2 (3) |
 
 Always `--dry-run` first. The runner boots one server per consecutive
 (model, tp, instr) block, aborts if the PHASE-INSTR batch-queue warning appears,

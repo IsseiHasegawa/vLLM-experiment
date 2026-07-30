@@ -133,6 +133,17 @@ def build():
     # tp=1 is re-measured here so the GPU-count comparison is within-instance.
     for rep in (1, 2, 3):
         rows.append(row(f"A1d_rep{rep}", "A1d", M7, "sharegpt", 1, "5", rep))
+
+    # C2x - extends the closed-loop sweep past c=64. Session B measured
+    # throughput 3.73 at c=64 with cv 17.8 % (the ShareGPT output-length tail
+    # dominates short closed-loop runs), so whether the curve is flat or still
+    # rising at the right edge was not settled. One more doubling settles it.
+    # Named separately from C2 because it runs on a different instance; the
+    # anchor for joining them is A1d vs A1c.
+    for rep in (1, 2, 3):
+        rows.append(row(f"C2x_c128_rep{rep}", "C2x", M7, "sharegpt", 1,
+                        "inf", rep, conc="128", prompts="200"))
+
     rows += sweep("G1", M7, "sharegpt", 1, RATES_7B)
     rows += sweep("G2", M7, "sharegpt", 2, RATES_7B)
     rows += sweep("G4", M7, "sharegpt", 4, RATES_7B)   # only if 4 GPUs secured

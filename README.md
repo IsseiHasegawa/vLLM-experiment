@@ -88,10 +88,16 @@
   ShareGPT nominal input p50/p95/max = 145/938/66076 against realised 135/767/1010, so
   plotting the nominal alone would overstate the served tail by 65x. Confirm the exact
   filter in benchmarks/datasets.py before writing Methods.
-- D27 (2026-07-29): 0.5B saturates at ~18-20 req/s with SM <= 59 % and memory
-  controller <= 45 %, while server CPU doubles vs 7B (169 % vs 55 %). Hypothesis:
-  per-step framework overhead, not the GPU, is the ceiling at small model size.
-  Test with sched_s / (sched_s + exec_s) from the step logs.
+- D27 (2026-07-29, revised 2026-07-31): 0.5B saturates at ~18-20 req/s with SM
+  <= 59 % and memory controller <= 45 %, while server CPU doubles vs 7B (169 %
+  vs 55 %). The original hypothesis blamed the *scheduler*; the step log refutes
+  that specific claim: sched_s/(sched_s+exec_s) is only 8.0 % on S3_r32 (2.4 %
+  on 7B). The correct statement is about step granularity: the 0.5B mean exec_s
+  is 6.3 ms vs 34.6 ms on 7B, so per-step fixed costs outside the timed sections
+  (step loop, kernel launch, sampling, detokenisation) occupy a far larger share
+  of each step, the CPU works ~5x as many steps per second, and the GPU is left
+  idle between launches. Evidence: high server CPU + low SM + short exec_s;
+  the scheduler-specific share is measured and small.
 - D28 (2026-07-29): **Analysis windows.** `resource_rows()` and the step-log slice now
   use a *measured* window, not the manifest window. The manifest window is the whole
   `vllm bench serve` lifetime, of which ~100 s is start-up with the GPU near idle, so
@@ -165,3 +171,30 @@
   of which ~400 s import, with engine init only 138 s), and session C adds a 15 GB weight
   download and NCCL init across 2-4 workers. A false timeout costs a whole boot's worth of
   runs; a generous one costs nothing unless the server is genuinely broken
+- D39 (2026-07-31): **Environment pinning across sessions.** `env_freeze.txt` cannot be
+  used directly as a constraints file: it records the state *after* the `datasets>=3.0`
+  upgrade, which is not a single consistent resolution (numpy 2.5.1 violates
+  mistral-common's `<2.4` and numba's `<2.5`; session A ran fine regardless). The working
+  recipe, used for session B: take env_freeze.txt, substitute the three post-upgrade
+  packages back to their install-time values (numpy==2.3.5, datasets==1.1.1,
+  fsspec==2026.7.0), drop the `-e` line, install with `uv pip install -r`, add build
+  deps (setuptools_rust setuptools_scm cmake wheel), then
+  `VLLM_USE_PRECOMPILED=1 uv pip install --editable . --no-deps --no-build-isolation`,
+  then re-run the datasets upgrade. Verified equivalent: A1c within 0.67 % of A1a on
+  throughput and within 1.9 % on every latency metric
+- D40 (2026-07-31): **Editable-install checks must run outside the source tree.** Inside
+  /workspace/vllm the CWD shadows site-packages, so `import vllm` succeeds even when
+  nothing is installed; session B lost one runner start to this
+  (`FileNotFoundError: 'vllm'`). Canonical check: `cd /tmp && which vllm && python -c
+  "import vllm; print(vllm.__file__)"` expecting the .venv bin path and the source-tree
+  __init__.py
+- D41 (2026-07-31): **Per-run fixed cost is instance-dependent.** Session A: 91-105 s
+  (eu-se-1); session B: ~260 s (ca-mtl-1), same commands, 3.4x. The measured section is
+  unaffected (A1c matched A1a to 1 %); only wall-clock forecasts change. D21's "60 %"
+  is a session A figure, not a constant. Set UV_CACHE_DIR=/root/.cache/uv and
+  TMPDIR=/root/tmp on every pod: /workspace quota exhaustion killed one install attempt
+  (D20's failure mode through a different path)
+- D42 (2026-07-31): **C2x (c=128, 3 runs) added to session C** to settle figure 10's
+  right edge: c=64 measured cv 17.8 % on throughput (output-length tail), so flat-vs-
+  rising was not decided. C2x runs on the session C instance inside the tp=1 boot;
+  figure 10 draws it as a separate open-marker series joined via the A1d/A1c anchor

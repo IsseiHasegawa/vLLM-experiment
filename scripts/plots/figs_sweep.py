@@ -142,24 +142,44 @@ def fig10(runs, outdir):
     if not c2:
         print("  SKIP fig10: no C2 runs")
         return None
+    # C2x (c=128) ran on the session C instance, not the session B one, so it
+    # is drawn as a separate open-marker point rather than silently appended
+    # to the C2 curve; A1d vs A1c is the anchor that justifies showing both
+    # on one axis.
+    c2x = select(runs, group="C2x")
     import statistics as st
-    by = {}
-    for r in c2:
-        by.setdefault(r["max_concurrency"], []).append(r)
-    xs, ys, es, labels = [], [], [], []
-    for c in sorted(by, key=lambda x: int(x)):
-        thr = [r["bench"]["output_throughput"] for r in by[c]]
-        lat = [r["bench"]["p95_e2el_ms"] / 1000 for r in by[c]]
-        xs.append(st.mean(thr))
-        ys.append(st.mean(lat))
-        es.append(st.stdev(lat) if len(lat) > 1 else 0.0)
-        labels.append(c)
+
+    def curve(rs):
+        by = {}
+        for r in rs:
+            by.setdefault(r["max_concurrency"], []).append(r)
+        xs, ys, es, labels = [], [], [], []
+        for c in sorted(by, key=lambda x: int(x)):
+            thr = [r["bench"]["output_throughput"] for r in by[c]]
+            lat = [r["bench"]["p95_e2el_ms"] / 1000 for r in by[c]]
+            xs.append(st.mean(thr))
+            ys.append(st.mean(lat))
+            es.append(st.stdev(lat) if len(lat) > 1 else 0.0)
+            labels.append(c)
+        return xs, ys, es, labels
+
+    xs, ys, es, labels = curve(c2)
 
     fig, ax = plt.subplots(figsize=(5.4, 3.6))
-    ax.errorbar(xs, ys, yerr=es, color=SERIES[0], marker=MARKERS[0])
+    ax.errorbar(xs, ys, yerr=es, color=SERIES[0], marker=MARKERS[0],
+                label="C2 (session B instance)" if c2x else None)
     for x, y, l in zip(xs, ys, labels):
         ax.annotate(l, (x, y), textcoords="offset points", xytext=(5, -9),
                     fontsize=7, color=C["grey"])
+    if c2x:
+        xx, xy, xe, xl = curve(c2x)
+        ax.errorbar(xx, xy, yerr=xe, color=SERIES[0], marker=MARKERS[0],
+                    mfc="white", linestyle="none",
+                    label="C2x (session C instance)")
+        for x, y, l in zip(xx, xy, xl):
+            ax.annotate(l, (x, y), textcoords="offset points",
+                        xytext=(5, -9), fontsize=7, color=C["grey"])
+        ax.legend(fontsize=7, frameon=False)
     ax.set_xlabel("Output throughput (tok/s)")
     ax.set_ylabel("End-to-end latency p95 (s)")
     ax.set_title("Closed-loop latency vs throughput\n"
