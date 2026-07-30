@@ -25,7 +25,12 @@
   and the 0.5B block (S3; 24 runs) run on separate instances. Day 2 begins by re-measuring
   the S1 r=5 anchor point (3 reps) to demonstrate cross-instance consistency
 - D13 (2026-07-27): Rate grid revised to {1,2,3,4,5,6,8,inf} after the pilot measured a
-  sustainable capacity of 3.2 req/s (7B/ShareGPT) and 4.5 req/s (7B/random)
+  sustainable capacity of 3.2 req/s (7B/ShareGPT) and 4.5 req/s (7B/random).
+  **Superseded in part by D24/D28 (2026-07-29):** the 4.5 figure was an artefact of
+  including drain time in the denominator. Session A reaches 6.83 req/s at rate 8 and
+  13.8 req/s at rate inf on 7B/random, so the grid tops out near 50 % utilisation and
+  contains no knee for that dataset. The 3.2 figure for ShareGPT is confirmed
+  (A1a/A1b: 3.01/3.21/3.36)
 - D14 (2026-07-27): **Revises D6.** Repetitions use seeds 1/2/3 instead of a fixed 42, with
   the same seed set reused for every condition. Comparisons stay paired, and the error bars
   now include prompt sampling and arrival jitter rather than system noise alone
@@ -45,6 +50,70 @@
 - D20 (2026-07-27): `HF_HOME=/root/hf_cache` (container disk). `/workspace` is a 50 GB
   network volume of which the venv occupies 21 GB; model weights there fail with
   `Disk quota exceeded`
-- D21 (2026-07-27): The runner keeps launching one `vllm bench serve` process per run even
-  though ~78 % of wall time is interpreter startup. Process isolation and the exact
-  reproducibility of each recorded command outweigh the ~4 h saved by an in-process loop
+- D21 (2026-07-27, figure corrected 2026-07-29): The runner keeps launching one
+  `vllm bench serve` process per run even though a large fraction of wall time is
+  process start-up. Process isolation and the exact reproducibility of each recorded
+  command outweigh the hours saved by an in-process loop.
+  **Measured on session A:** 60.0 % of wall clock is fixed cost (15 176 s wall,
+  6 066 s measured across 91 runs), not the 75-82 % seen in the pilot, which sampled
+  only short runs. Fixed cost is 91-105 s per run and is independent of the dataset
+  (S1/ShareGPT 95.8 s vs S2/random 100.1 s), so it is `import vllm` plus tokenizer
+  load plus warm-up, not the 642 MB ShareGPT parse. The share of a run that is
+  overhead ranges from 31 % (rate 1) to 92 % (S3 rate 32)
+- D22 (2026-07-29): `--torch-backend=cu128` is unsatisfiable (torchcodec>=0.14 has no
+  cu128 wheel). Using `auto`, so torch's CUDA build follows the host driver:
+  session A got driver 580.95.05 -> torch 2.11.0+cu130 (the pilot ran on 570.x).
+  Recorded in env_freeze.txt; anchors A1c/A1d detect any resulting difference.
+- D23 (2026-07-29): `enable_chunked_prefill=True` (vLLM default). Prefill is split
+  and mixes with decode in the same step, so "prefill time" is not one contiguous
+  interval. Affects figure 8 and the Methods definition of the phase split.
+- D24 (2026-07-29): RATE_SHORTFALL is a definitional artefact, not saturation.
+  `achieved = 200 / (arrival span + drain)`, so the flag fires at 58 % utilisation
+  (S2 r=8: 6.83 vs capacity 13.8). Arrival span / expected span = 1.00 in all 78
+  open-loop runs, so arrivals were always delivered as specified. The §6.4 gate
+  becomes "span ratio == 1.00"; figure 3 must define achieved rate over the
+  arrival window, excluding drain.
+- D25 (2026-07-29): Do not quote rinf as capacity for ShareGPT. Output length p95/p50
+  is 5.7x (max 1642 tokens), so a run ends when its longest request ends; S1_rinf
+  varies 3.23/4.57/3.56 across seeds (41 %). Dataset effect is reported at matched
+  rates or from closed-loop C2.
+- D26 (2026-07-29): The ShareGPT sampler admits only prompts <= ~1024 tokens
+  (max realised n_prompt = 1010 vs 66 076 in the raw file). The "realistic
+  conversation" claim is bounded accordingly; figure 5 shows both distributions.
+  Confirm the exact filter in benchmarks/datasets.py before writing Methods.
+- D27 (2026-07-29): 0.5B saturates at ~18-20 req/s with SM <= 59 % and memory
+  controller <= 45 %, while server CPU doubles vs 7B (169 % vs 55 %). Hypothesis:
+  per-step framework overhead, not the GPU, is the ceiling at small model size.
+  Test with sched_s / (sched_s + exec_s) from the step logs.
+- D28 (2026-07-29): **Analysis windows.** `resource_rows()` and the step-log slice now
+  use a *measured* window, not the manifest window. The manifest window is the whole
+  `vllm bench serve` lifetime, of which ~100 s is start-up with the GPU near idle, so
+  averaging over it understates utilisation by 1.4x (rate 1) to 8.2x (S3 rate 32) -
+  and because the distortion grows with rate, figure 9 would have shown utilisation
+  *falling* under load. The window is recovered from the request log (records inside
+  the manifest window, ordered by completion, first `--num-warmups` dropped); runs with
+  no phase log (C1off) fall back to `end_ts - duration`. Corrected mean SM utilisation
+  at rate 5 on 7B/ShareGPT: 87.5 %, not 41.0 %
+- D29 (2026-07-29): **Warm-up requests are excluded from phase-log analysis.** The
+  window contains `num_prompts + num_warmups` = 230 records per run; the leading 30 are
+  dropped by completion order, which yields exactly 200 for all 88 instrumented runs.
+  Keeping them would reimport the contamination D16 was raised to avoid
+- D30 (2026-07-29): **run_ids are not unique across campaigns.** The pilot and session A
+  both contain I1_rep1, I2_rep1, S1_r5_rep1, S2_r5_rep1. Keying the manifest on run_id
+  alone let a pilot timing window be applied to a session A bench file, which silently
+  emptied the phase-log slice for exactly the runs figure 8 is built from. Manifest rows
+  are now keyed by (run_id, campaign directory) taken from `result_json`, and a shadowed
+  run_id prints a NOTE
+- D31 (2026-07-29): **C1 is analysed paired by seed, and it detects an effect.** The arms
+  share seeds (D14), so the paired difference isolates logging: TTFT p50 +2.97 %
+  (p=0.010), TPOT p95 +1.05 %, request throughput -0.26 %, and 7/7 metrics move in the
+  same direction. The unpaired Welch test on n=3 has almost no power (all p>0.5) and is
+  retained for completeness only. Reported claim: logging costs <=3 % on latency and
+  <=0.3 % on throughput, so instrumented latencies are upper bounds and instrumented
+  throughput a lower bound. This revises the session-A quality gate in PLAN 6.4, which
+  required the string "no instrumentation effect detected": a small, bounded, correctly
+  signed effect is the expected outcome, not a failure
+- D32 (2026-07-29): **S2b** adds rates {5,10,12,16,20} for 7B/random in session B, since
+  S2's grid stopped at ~50 % utilisation (D13). r=5 overlaps session A's S2_r5 so the two
+  instances can be cross-checked; the group is named separately because it is a different
+  instance and must not be silently merged into the S2 series

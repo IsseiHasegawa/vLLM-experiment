@@ -44,6 +44,28 @@ METRICS = [
 # variation of the serving system itself.
 EQUIV_PCT = 2.0
 
+# Metrics where a larger number is better, so a negative delta means logging
+# made things worse. Used to report a consistent direction across metrics.
+HIGHER_IS_BETTER = {"request_throughput", "output_throughput"}
+
+
+def paired(a, b):
+    """Paired t statistic and two-sided p on the per-seed differences.
+
+    The two arms use the same seeds (D14), so the workload is identical within
+    a pair and the difference isolates logging. This is far sharper than the
+    unpaired test: at rate 5 the seed-to-seed spread of throughput is ~10 %
+    while the paired difference is a few tenths of a percent.
+    """
+    if len(a) != len(b) or len(a) < 2:
+        return float("nan"), float("nan")
+    d = [x - y for x, y in zip(a, b)]
+    sd = st.stdev(d)
+    if sd == 0:
+        return 0.0, 1.0
+    t = st.mean(d) / (sd / math.sqrt(len(d)))
+    return t, math.erfc(abs(t) / math.sqrt(2))
+
 
 def welch(a, b):
     """Welch's t statistic and two-sided p, via a normal approximation."""
@@ -114,18 +136,71 @@ def main():
             flagged.append((label, rel, p))
 
     emit()
-    emit(f"largest relative difference: {worst:+.2f}% "
+    emit(f"largest unpaired difference: {worst:+.2f}% "
          f"(practical-equivalence bound ±{EQUIV_PCT:.1f}%)")
-    if flagged:
-        emit("VERDICT: instrumentation effect detected on "
-             + ", ".join(f"{l} ({r:+.1f}%, p={p:.3f})" for l, r, p in flagged))
-        emit("  -> report the effect and treat instrumented numbers as an "
-             "upper bound on latency / lower bound on throughput.")
+
+    # ---- paired by seed: the comparison the design actually supports -------
+    on_by_seed = {r.get("seed"): r["bench"] for r in on}
+    off_by_seed = {r.get("seed"): r["bench"] for r in off}
+    seeds = sorted(s for s in on_by_seed if s in off_by_seed)
+    worst_paired = 0.0
+    signs = []
+    paired_flags = []
+    if len(seeds) >= 2:
+        emit()
+        phdr = (f"{'metric (paired by seed)':<24}{'mean delta':>12}"
+                f"{'per-seed range':>22}{'t':>8}{'p':>8}")
+        emit(phdr)
+        emit("-" * len(phdr))
+        for key, label, unit in METRICS:
+            a = [on_by_seed[s][key] for s in seeds if key in on_by_seed[s]]
+            b = [off_by_seed[s][key] for s in seeds if key in off_by_seed[s]]
+            if len(a) != len(b) or not a:
+                continue
+            rels = [100.0 * (x - y) / y for x, y in zip(a, b) if y]
+            if not rels:
+                continue
+            mr = st.mean(rels)
+            t, p = paired(a, b)
+            emit(f"{label:<24}{mr:>11.2f}%"
+                 f"{f'{min(rels):+.2f}% .. {max(rels):+.2f}%':>22}"
+                 f"{t:>8.2f}{p:>8.3f}")
+            if abs(mr) > abs(worst_paired):
+                worst_paired = mr
+            # Normalise so that "positive" always means "logging made it
+            # worse", i.e. flip the throughput metrics.
+            signs.append(1 if mr * (-1 if key in HIGHER_IS_BETTER else 1) > 0
+                         else -1)
+            if abs(mr) > EQUIV_PCT and p < 0.05:
+                paired_flags.append((label, mr, p))
+        emit()
+        emit(f"largest paired difference:   {worst_paired:+.2f}%  "
+             f"(n={len(seeds)} seed pairs)")
+        pos = sum(1 for s in signs if s > 0)
+        emit(f"direction agreement: {max(pos, len(signs) - pos)}/{len(signs)} "
+             "metrics move in the same direction (logging slower / lower "
+             "throughput). A consistent direction is evidence of a real "
+             "effect even where each metric alone is inside the bound.")
+
+    emit()
+    # The paired test is the sharper one and is preferred when the arms pair
+    # up by seed; the unpaired numbers stay in the output for completeness.
+    use, src = (paired_flags, "paired") if len(seeds) >= 2 else (flagged, "unpaired")
+    if use:
+        emit(f"VERDICT: instrumentation effect detected ({src}) on "
+             + ", ".join(f"{l} ({r:+.2f}%, p={p:.3f})" for l, r, p in use))
+        emit("  -> report the effect; treat instrumented latencies as an "
+             "upper bound and instrumented throughput as a lower bound.")
         rc = 1
     else:
-        emit("VERDICT: no instrumentation effect detected. All metrics agree "
-             f"within ±{EQUIV_PCT:.1f}% or are indistinguishable from noise.")
+        emit(f"VERDICT: no instrumentation effect above ±{EQUIV_PCT:.1f}% "
+             f"({src} test).")
         rc = 0
+    if len(seeds) >= 2:
+        emit(f"  Bound for the report: every metric within "
+             f"{abs(worst_paired):.2f}% (paired, n={len(seeds)}).")
+        emit("  With n=3 the unpaired p-values have almost no power; the "
+             "paired bound is the claim this control supports.")
 
     # Per-request overhead implied by the logging volume, for the Methods text.
     recs = []

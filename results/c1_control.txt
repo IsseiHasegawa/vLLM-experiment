@@ -12,7 +12,24 @@ Request throughput         3.19±0.18     3.20±0.18      -0.27%   -0.06   0.953
 Output throughput        611.37±28.05   613.02±29.41      -0.27%   -0.07   0.944
 Run duration              62.73±3.48    62.57±3.56       0.26%    0.06   0.955
 
-largest relative difference: +3.06% (practical-equivalence bound ±2.0%)
-VERDICT: no instrumentation effect detected. All metrics agree within ±2.0% or are indistinguishable from noise.
+largest unpaired difference: +3.06% (practical-equivalence bound ±2.0%)
 
-logging volume in the enabled arm: 690 request records, 5660 step records over 3 runs
+metric (paired by seed)   mean delta        per-seed range       t       p
+--------------------------------------------------------------------------
+TTFT p50                       2.97%      +1.05% .. +4.86%    2.56   0.010
+TTFT p95                       1.81%      -0.29% .. +3.76%    1.54   0.123
+TPOT p50                       0.68%      +0.09% .. +1.52%    1.56   0.120
+TPOT p95                       1.05%      +0.48% .. +1.99%    2.28   0.023
+Request throughput            -0.26%      -0.51% .. -0.10%   -1.98   0.048
+Output throughput             -0.26%      -0.51% .. -0.10%   -2.00   0.045
+Run duration                   0.26%      +0.10% .. +0.51%    2.22   0.026
+
+largest paired difference:   +2.97%  (n=3 seed pairs)
+direction agreement: 7/7 metrics move in the same direction (logging slower / lower throughput). A consistent direction is evidence of a real effect even where each metric alone is inside the bound.
+
+VERDICT: instrumentation effect detected (paired) on TTFT p50 (+2.97%, p=0.010)
+  -> report the effect; treat instrumented latencies as an upper bound and instrumented throughput as a lower bound.
+  Bound for the report: every metric within 2.97% (paired, n=3).
+  With n=3 the unpaired p-values have almost no power; the paired bound is the claim this control supports.
+
+logging volume in the enabled arm: 600 request records, 5116 step records over 3 runs

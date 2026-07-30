@@ -27,6 +27,7 @@ import glob
 import gzip
 import json
 import math
+import re
 import statistics as st
 from pathlib import Path
 
@@ -108,8 +109,14 @@ def load_runs(repo=".", results_dirs=None, matrix="configs/matrix.csv",
             cfg[row["run_id"]] = row
 
     # Every manifest*.csv is read, so the pilot campaign and the main
-    # campaign can coexist without one hiding the other.
+    # campaign can coexist without one hiding the other. run_ids are NOT
+    # unique across campaigns (the pilot and session A share I1_rep1,
+    # I2_rep1, S1_r5_rep1, S2_r5_rep1), so rows are keyed by
+    # (run_id, campaign directory) recovered from result_json. Keying on
+    # run_id alone let a pilot row supply the timing window for a session A
+    # bench file, which silently emptied every phase-log slice for those ids.
     man = {}
+    man_any = {}
     mpaths = sorted(glob.glob(str(repo / "results" / "manifest*.csv")))
     mpath = repo / manifest
     if str(mpath) not in mpaths and mpath.exists():
@@ -117,8 +124,12 @@ def load_runs(repo=".", results_dirs=None, matrix="configs/matrix.csv",
     for mp in mpaths:
         with open(mp, newline="") as f:
             for row in csv.DictReader(f):
-                if row.get("status") == "ok":
-                    man[row["run_id"]] = row
+                if row.get("status") != "ok":
+                    continue
+                rj = row.get("result_json") or ""
+                camp = Path(rj).parent.parent.name if rj else ""
+                man[(row["run_id"], camp)] = row
+                man_any.setdefault(row["run_id"], row)
 
     if results_dirs is None:
         results_dirs = sorted(glob.glob(str(repo / "results" / "raw" / "*")))
@@ -138,13 +149,19 @@ def load_runs(repo=".", results_dirs=None, matrix="configs/matrix.csv",
             r = dict(cfg[rid])
             r["bench"] = bench
             r["results_dir"] = d
-            if rid in man:
-                r["start_ts"] = _num(man[rid]["start_ts"])
-                r["end_ts"] = _num(man[rid]["end_ts"])
-                r["notes"] = man[rid].get("notes", "")
+            mrow = man.get((rid, Path(d).name))
+            if mrow is not None:
+                r["start_ts"] = _num(mrow["start_ts"])
+                r["end_ts"] = _num(mrow["end_ts"])
+                r["notes"] = mrow.get("notes", "")
+                r["command"] = mrow.get("command", "")
             elif mpaths and man:
-                # Manifest exists but this run is not marked ok -> skip it.
+                # Manifest exists but this run is not marked ok here -> skip.
                 continue
+            if rid in runs:
+                print(f"  NOTE run_id {rid} found in "
+                      f"{Path(runs[rid]['results_dir']).name} and "
+                      f"{Path(d).name}; using {Path(d).name}")
             runs[rid] = r
     return runs
 
@@ -232,8 +249,19 @@ def annotate_inf(ax, points):
 # phase logs and resources
 # --------------------------------------------------------------------------
 
+_JSONL_CACHE: dict = {}
+
+
 def load_jsonl(patterns):
-    """Load JSONL / JSONL.gz records, dropping meta headers."""
+    """Load JSONL / JSONL.gz records, dropping meta headers.
+
+    Results are cached per pattern tuple: the phase logs are read once per
+    figure run instead of once per call, which matters because the window
+    helpers below need the request log to locate the measured section.
+    """
+    key = tuple(patterns)
+    if key in _JSONL_CACHE:
+        return _JSONL_CACHE[key]
     recs = []
     for pat in patterns:
         for p in sorted(glob.glob(pat)):
@@ -250,37 +278,101 @@ def load_jsonl(patterns):
                     if j.get("record") == "meta":
                         continue
                     recs.append(j)
+    _JSONL_CACHE[key] = recs
     return recs
 
 
-def phase_records(run, kind="requests"):
-    """Per-request (or per-step) records belonging to one run.
-
-    Implements decision D4: slice the phase log on wall-clock ts using the
-    manifest window. `requests` records are timestamped at completion, so the
-    window is extended on the left by the run duration to avoid dropping
-    requests that finish early in a long run; the right edge is authoritative.
-    """
+def _raw_phase(run, kind):
+    """Every phase-log record on disk for this results directory."""
     d = Path(run["results_dir"])
     pats = [str(d / "phase_logs" / f"{kind}*.jsonl"),
             str(d / "phase_logs" / f"{kind}*.jsonl.gz"),
             str(d / f"{kind}*.jsonl"), str(d / f"{kind}*.jsonl.gz")]
-    recs = load_jsonl(pats)
+    return load_jsonl(pats)
+
+
+def _num_warmups(run, default=30):
+    """Warm-up request count for this run, read back from the command."""
+    m = re.search(r"--num-warmups\s+(\d+)", run.get("command", "") or "")
+    return int(m.group(1)) if m else default
+
+
+_WINDOW_CACHE: dict = {}
+
+
+def measurement_window(run):
+    """(t0, t1) covering only the *measured* section of a run.
+
+    The manifest window is the lifetime of the `vllm bench serve` process, of
+    which roughly 100 s is interpreter start-up, tokenizer load and warm-up
+    with the GPU near idle (60 % of session A's wall clock; see D21). Averaging
+    anything over that window understates utilisation, and the error grows with
+    the request rate because the measured section shrinks while start-up does
+    not, so utilisation appears to *fall* under load.
+
+    The measured section is recovered from the request log: records inside the
+    manifest window, ordered by completion, with the first `--num-warmups`
+    dropped. Runs without a phase log (the C1off arm) fall back to
+    `end_ts - duration`.
+    """
+    rid = run.get("run_id", "")
+    key = (rid, run.get("results_dir", ""))
+    if key in _WINDOW_CACHE:
+        return _WINDOW_CACHE[key]
+
+    t0, t1 = run.get("start_ts"), run.get("end_ts")
+    win = (t0, t1)
+    if t0 is not None and t1 is not None:
+        recs = [r for r in _raw_phase(run, "requests")
+                if t0 <= r.get("ts", 0) <= t1 + 1.0]
+        recs.sort(key=lambda r: r.get("ts", 0))
+        recs = recs[_num_warmups(run):]
+        if recs:
+            win = (min(r.get("arrival_ts", r["ts"]) for r in recs),
+                   max(r["ts"] for r in recs))
+        else:
+            dur = run.get("bench", {}).get("duration")
+            if dur:
+                win = (t1 - dur, t1)
+    _WINDOW_CACHE[key] = win
+    return win
+
+
+def phase_records(run, kind="requests"):
+    """Per-request (or per-step) records belonging to one run, warm-up removed.
+
+    Implements decision D4: slice the phase log on wall-clock ts using the
+    manifest window. `requests` records are timestamped at completion, so the
+    window is the manifest window and the leading `--num-warmups` records are
+    dropped by completion order; this yields exactly `num_prompts` records.
+    `steps` records carry no request identity, so they are sliced on the
+    measured window returned by measurement_window().
+    """
+    recs = _raw_phase(run, kind)
     t0, t1 = run.get("start_ts"), run.get("end_ts")
     if t0 is None or t1 is None:
         return recs
-    return [r for r in recs if t0 <= r.get("ts", 0) <= t1 + 1.0]
+    if kind == "requests":
+        recs = [r for r in recs if t0 <= r.get("ts", 0) <= t1 + 1.0]
+        recs.sort(key=lambda r: r.get("ts", 0))
+        return recs[_num_warmups(run):]
+    m0, m1 = measurement_window(run)
+    return [r for r in recs if m0 <= r.get("ts", 0) <= m1]
 
 
 def resource_rows(run):
-    """1 Hz resource samples inside this run's manifest window."""
+    """1 Hz resource samples inside this run's *measured* window.
+
+    Not the manifest window: see measurement_window() for why that would
+    understate every utilisation figure, worst at the highest rates.
+    """
     d = Path(run["results_dir"])
     rows = []
     for p in sorted(glob.glob(str(d / "resources*.csv"))):
         with open(p, newline="") as f:
             for row in csv.DictReader(f):
                 rows.append(row)
-    t0, t1 = run.get("start_ts"), run.get("end_ts")
+    t0, t1 = measurement_window(run)
     if t0 is None or t1 is None:
         return rows
     return [r for r in rows if t0 <= _num(r.get("ts"), 0) <= t1]

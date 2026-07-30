@@ -46,6 +46,9 @@ COLS = ["run_id", "group", "model", "dataset", "input_len", "output_len",
 SEEDS = {1: 1, 2: 2, 3: 3}          # rep -> seed
 RATES_7B = ["1", "2", "3", "4", "5", "6", "8", "inf"]
 RATES_05B = ["1", "2", "4", "8", "12", "16", "24", "32", "inf"]
+# S2 (7B/random) saturates far above its original grid; these extend it in
+# session B, with r=5 repeated from session A as the overlap point.
+RATES_S2B = ["5", "10", "12", "16", "20"]
 CONCURRENCY = ["1", "2", "4", "8", "16", "32", "64"]
 
 # Closed-loop runs are self-paced, so a low concurrency limit makes each run
@@ -115,6 +118,12 @@ def build():
     # ---- session B: closed-loop control on a single GPU --------------------
     for rep in (1, 2, 3):
         rows.append(row(f"A1c_rep{rep}", "A1c", M7, "sharegpt", 1, "5", rep))
+
+    # S2b - S2's grid stopped at ~50 % utilisation (see D13/D28), so 7B/random
+    # never reached a knee. These rates extend it. r=5 repeats a session A
+    # point so the two instances can be compared directly; the group is named
+    # separately because it is a different instance, not more of S2.
+    rows += sweep("S2b", M7, "random", 1, RATES_S2B, inp="256", out="128")
     for c in CONCURRENCY:
         for rep in (1, 2, 3):
             rows.append(row(f"C2_c{c}_rep{rep}", "C2", M7, "sharegpt", 1,
