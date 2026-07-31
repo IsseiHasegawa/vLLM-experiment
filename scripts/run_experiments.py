@@ -108,6 +108,10 @@ def build_server_cmd(model, tp, iteration_details, host, port):
         "--no-enable-prefix-caching",
         "--no-async-scheduling",
     ]
+    if int(tp) > 1:
+        # D43: custom all-reduce hangs on this no-NVLink NUMA-split host.
+        # Only for tp>1, so tp=1 stays identical to sessions A and B.
+        cmd.append("--disable-custom-all-reduce")
     if iteration_details:
         cmd.append("--enable-logging-iteration-details")
     return cmd
@@ -289,6 +293,13 @@ def main():
             boot_env = dict(server_env)
             if instr == "off":
                 boot_env.pop("VLLM_PHASE_LOG_DIR", None)
+            if int(tp) > 1:
+                # D43: this host needs P2P and IB off for NCCL to come up at
+                # all. Scoped to the tp>1 server process so tp=1 boots keep
+                # exactly the environment sessions A and B used (at
+                # world_size=1 no NCCL communicator is created anyway).
+                boot_env["NCCL_P2P_DISABLE"] = "1"
+                boot_env["NCCL_IB_DISABLE"] = "1"
             slog_path = results_dir / (
                 f"server_{model.split('/')[-1]}_tp{tp}_instr-{instr}"
                 f"_{int(time.time())}.log")

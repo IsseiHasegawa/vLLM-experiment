@@ -1,0 +1,21 @@
+Session C multi-GPU configuration (2026-07-31)
+
+Host: 4x A40, no NVLink. GPU0-GPU1 PXB, GPU2-GPU3 PIX, the pairs SYS across
+NUMA nodes. Two RoCE NICs (rocep177s0f0/f1).
+
+vLLM tp=2 hangs in NCCL communicator setup on this host. Bisection (0.5B, tp=2):
+  --disable-custom-all-reduce alone   -> hang (600 s)
+  + NCCL_IB_DISABLE=1                 -> hang (480 s)
+  + NCCL_P2P_DISABLE=1 (all three)    -> boots in 5.5 min
+Both env vars are set by the runner for tp>1 only; tp=1 rows (A1d, C2x, G1) use
+the exact environment and server command of sessions A and B.
+
+Consequence: with P2P disabled, inter-GPU transfers stage through host memory,
+so G2/G4 measure tensor parallelism under a communication penalty beyond the
+PCIe topology itself. Measured speedups are conservative lower bounds.
+
+Note: G1_r1_rep1 recorded completed=199/200 (rc=0) and is marked fail. Not
+re-run: a 4th boot would measure it on a different server instance. rep2/rep3
+stand, and session A's S1
+
+_r1 covers the same condition with 3 reps.
