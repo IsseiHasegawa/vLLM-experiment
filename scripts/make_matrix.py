@@ -40,7 +40,7 @@ M7 = "Qwen/Qwen2.5-7B-Instruct"
 M05 = "Qwen/Qwen2.5-0.5B-Instruct"
 
 COLS = ["run_id", "group", "model", "dataset", "input_len", "output_len",
-        "tp", "request_rate", "max_concurrency", "rep", "num_prompts",
+        "tp", "pp", "request_rate", "max_concurrency", "rep", "num_prompts",
         "seed", "instr"]
 
 SEEDS = {1: 1, 2: 2, 3: 3}          # rep -> seed
@@ -58,23 +58,23 @@ C2_PROMPTS = {"1": "60", "2": "60", "4": "120", "8": "120",
 
 
 def row(run_id, group, model, dataset, tp, rate, rep, *, inp="", out="",
-        conc="", prompts="200", instr="on"):
+        conc="", prompts="200", instr="on", pp=1):
     return {
         "run_id": run_id, "group": group, "model": model, "dataset": dataset,
-        "input_len": inp, "output_len": out, "tp": str(tp),
+        "input_len": inp, "output_len": out, "tp": str(tp), "pp": str(pp),
         "request_rate": rate, "max_concurrency": conc, "rep": str(rep),
         "num_prompts": prompts, "seed": str(SEEDS[rep]), "instr": instr,
     }
 
 
-def sweep(group, model, dataset, tp, rates, *, inp="", out="", instr="on"):
+def sweep(group, model, dataset, tp, rates, *, inp="", out="", instr="on", pp=1):
     """One rate sweep: every rate x every repetition."""
     rows = []
     for rate in rates:
         tag = "inf" if rate == "inf" else rate
         for rep in (1, 2, 3):
             rows.append(row(f"{group}_r{tag}_rep{rep}", group, model, dataset,
-                            tp, rate, rep, inp=inp, out=out, instr=instr))
+                            tp, rate, rep, inp=inp, out=out, instr=instr, pp=pp))
     return rows
 
 
@@ -146,7 +146,16 @@ def build():
 
     rows += sweep("G1", M7, "sharegpt", 1, RATES_7B)
     rows += sweep("G2", M7, "sharegpt", 2, RATES_7B)
-    rows += sweep("G4", M7, "sharegpt", 4, RATES_7B)   # only if 4 GPUs secured
+    rows += sweep("G4", M7, "sharegpt", 4, RATES_7B)
+
+    # P1 - pipeline parallelism at the same GPU count as G2, so tp=2 vs pp=2
+    # isolates the communication pattern rather than the device count. TP
+    # all-reduces at every layer; PP hands the activation across once per
+    # stage boundary. On this host P2P is disabled (D43), which makes every
+    # transfer go through host memory, so the difference in message count is
+    # the dominant term. Same grid as G1/G2/G4 so all four series share an
+    # x-axis in figure 7.
+    rows += sweep("P1", M7, "sharegpt", 1, RATES_7B, pp=2)   # only if 4 GPUs secured
 
     return rows
 

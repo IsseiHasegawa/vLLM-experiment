@@ -198,3 +198,13 @@
   right edge: c=64 measured cv 17.8 % on throughput (output-length tail), so flat-vs-
   rising was not decided. C2x runs on the session C instance inside the tp=1 boot;
   figure 10 draws it as a separate open-marker series joined via the A1d/A1c anchor
+- D44 (2026-08-01): **Pipeline parallelism (P1, pp=2) added.** The task lists "test
+  performance using varying numbers of GPUs" and "enable and evaluate parallel processing
+  options" as separate requirements; sessions A-C answered both with tensor parallelism
+  alone. P1 runs the G1/G2/G4 rate grid at pp=2, i.e. the same two GPUs as G2 but a
+  different communication pattern: TP all-reduces at every layer, PP hands the activation
+  across once per stage boundary. With P2P disabled (D43) every transfer stages through
+  host memory, so message count dominates and the tp=2 vs pp=2 pair is a clean comparison
+  of communication strategy at fixed device count. Matrix is now 232 rows; the runner
+  gained a `pp` column, includes pp in the boot key, and applies the D43 NCCL workaround
+  whenever tp>1 **or** pp>1. tp=1/pp=1 server commands are unchanged, verified by dry-run

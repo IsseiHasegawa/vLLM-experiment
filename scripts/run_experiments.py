@@ -50,7 +50,7 @@ from pathlib import Path
 MANIFEST_COLS = [
     "run_id", "session", "start_ts", "end_ts", "model", "dataset", "tp",
     "request_rate", "max_concurrency", "instr", "rep", "command",
-    "result_json", "status", "notes",
+    "result_json", "status", "notes", "pp",
 ]
 
 BENCH_FIXED = [
@@ -100,7 +100,7 @@ def append_manifest(manifest_path, row_dict):
         w.writerow({k: row_dict.get(k, "") for k in MANIFEST_COLS})
 
 
-def build_server_cmd(model, tp, iteration_details, host, port):
+def build_server_cmd(model, tp, iteration_details, host, port, pp=1):
     cmd = [
         "vllm", "serve", model,
         "--host", host, "--port", str(port),
@@ -108,7 +108,9 @@ def build_server_cmd(model, tp, iteration_details, host, port):
         "--no-enable-prefix-caching",
         "--no-async-scheduling",
     ]
-    if int(tp) > 1:
+    if int(pp) > 1:
+        cmd += ["--pipeline-parallel-size", str(pp)]
+    if int(tp) > 1 or int(pp) > 1:
         # D43: custom all-reduce hangs on this no-NVLink NUMA-split host.
         # Only for tp>1, so tp=1 stays identical to sessions A and B.
         cmd.append("--disable-custom-all-reduce")
@@ -236,7 +238,8 @@ def main():
         # A server is reused only while model, parallelism AND the
         # instrumentation switch stay the same; the C1 control needs a server
         # started without VLLM_PHASE_LOG_DIR.
-        key = (row["model"], row["tp"], (row.get("instr") or "on").strip())
+        key = (row["model"], row["tp"], (row.get("pp") or "1").strip() or "1",
+               (row.get("instr") or "on").strip())
         if key != cur_key:
             if cur_rows:
                 boots.append((cur_key, cur_rows))
@@ -251,10 +254,12 @@ def main():
     print(f"[runner] phase logs -> {phase_log_dir}")
 
     if args.dry_run:
-        for (model, tp, instr), group_rows in boots:
-            print(f"\n=== BOOT {model} tp={tp} instrumentation={instr} ===")
+        for (model, tp, pp, instr), group_rows in boots:
+            print(f"\n=== BOOT {model} tp={tp} pp={pp} "
+                  f"instrumentation={instr} ===")
             print("  " + shlex.join(build_server_cmd(
-                model, tp, args.iteration_details, args.host, args.port)))
+                model, tp, args.iteration_details, args.host, args.port,
+                pp=pp)))
             for row in group_rows:
                 mark = "SKIP(ok)" if row["run_id"] in done else "RUN"
                 cmd = build_bench_cmd(row, args, bench_dir,
@@ -282,18 +287,18 @@ def main():
     server = None
     server_log = None
     try:
-        for bi, ((model, tp, instr), group_rows) in enumerate(boots, 1):
+        for bi, ((model, tp, pp, instr), group_rows) in enumerate(boots, 1):
             todo = [r for r in group_rows if r["run_id"] not in done]
             if not todo:
                 print(f"[runner] boot {bi}: all rows done, skipping boot")
                 continue
 
             scmd = build_server_cmd(model, tp, args.iteration_details,
-                                    args.host, args.port)
+                                    args.host, args.port, pp=pp)
             boot_env = dict(server_env)
             if instr == "off":
                 boot_env.pop("VLLM_PHASE_LOG_DIR", None)
-            if int(tp) > 1:
+            if int(tp) > 1 or int(pp) > 1:
                 # D43: this host needs P2P and IB off for NCCL to come up at
                 # all. Scoped to the tp>1 server process so tp=1 boots keep
                 # exactly the environment sessions A and B used (at
@@ -318,7 +323,7 @@ def main():
                 append_manifest(args.manifest, {
                     "run_id": f"BOOT{bi}", "session": args.session,
                     "start_ts": f"{time.time():.3f}", "end_ts": "",
-                    "model": model, "tp": tp, "instr": instr,
+                    "model": model, "tp": tp, "pp": pp, "instr": instr,
                     "status": "boot_fail",
                     "notes": msg,
                 })
@@ -347,7 +352,7 @@ def main():
                 append_manifest(args.manifest, {
                     "run_id": wname, "session": args.session,
                     "start_ts": f"{t0:.3f}", "end_ts": f"{time.time():.3f}",
-                    "model": model, "dataset": "random", "tp": tp,
+                    "model": model, "dataset": "random", "tp": tp, "pp": pp,
                     "request_rate": "inf", "instr": instr, "rep": "0",
                     "command": shlex.join(wcmd),
                     "status": "boot_warmup", "notes": "discard",
@@ -384,7 +389,7 @@ def main():
                     "run_id": rid, "session": args.session,
                     "start_ts": f"{t0:.3f}", "end_ts": f"{t1:.3f}",
                     "model": model, "dataset": row["dataset"], "tp": tp,
-                    "request_rate": row["request_rate"],
+                    "pp": pp, "request_rate": row["request_rate"],
                     "max_concurrency": row.get("max_concurrency", ""),
                     "instr": instr, "rep": row["rep"],
                     "command": shlex.join(cmd),

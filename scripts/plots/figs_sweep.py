@@ -116,14 +116,17 @@ def fig06(runs, outdir):
 def fig07(runs, outdir):
     """GPU count. G1/G2/G4 are all measured on the same multi-GPU instance,
     so the only difference between the series is the parallelism setting."""
-    groups = [g for g in ("G1", "G2", "G4") if select(runs, group=g)]
+    # P1 (pp=2) uses the same two GPUs as G2 (tp=2), so the pair isolates the
+    # communication pattern - all-reduce at every layer versus one activation
+    # hand-off per stage boundary - rather than the device count.
+    groups = [g for g in ("G1", "G2", "G4", "P1") if select(runs, group=g)]
     names = {"G1": "1 GPU (tp=1)", "G2": "2 GPUs (tp=2)",
-             "G4": "4 GPUs (tp=4)"}
+             "G4": "4 GPUs (tp=4)", "P1": "2 GPUs (pp=2)"}
     if not groups:
-        print("  SKIP fig07: no G1/G2/G4 runs")
+        print("  SKIP fig07: no G1/G2/G4/P1 runs")
         return None
     return _overlay(runs, outdir, groups, [names[g] for g in groups],
-                    "Effect of GPU count and tensor parallelism "
+                    "Effect of GPU count and parallelism strategy "
                     "(Qwen2.5-7B, ShareGPT, single instance)",
                     "fig07_gpu_count_comparison",
                     fields=[("p95_ttft_ms", "TTFT p95 (ms)"),
