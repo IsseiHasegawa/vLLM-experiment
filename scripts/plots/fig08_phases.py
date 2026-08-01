@@ -56,7 +56,7 @@ def _ttft_split(runs, group):
 def fig08(runs, outdir, groups=("I1", "I2"),
           labels=("prefill-heavy\n512 in / 128 out",
                   "decode-heavy\n128 in / 512 out")):
-    fig, (a1, a2) = plt.subplots(1, 2, figsize=(8.6, 3.6))
+    fig, (a1, a2) = plt.subplots(1, 2, figsize=(9.2, 4.4))
 
     # ---- left: stacked phase breakdown -------------------------------------
     names, queued, prefill, decode = [], [], [], []
@@ -79,15 +79,29 @@ def fig08(runs, outdir, groups=("I1", "I2"),
         a1.set_xticklabels(names)
         a1.set_ylabel("Mean time per request (ms)")
         a1.set_title("Per-request phase breakdown")
-        a1.legend()
-        # Percentage labels make the prefill/decode shift explicit.
+        # Below the axes: the annotations for the invisible segments sit above
+        # the bars, which is where an in-axes legend would have to go.
+        a1.legend(loc="upper center", bbox_to_anchor=(0.5, -0.22), fontsize=7,
+                  frameon=False, ncol=3)
+        top = max(q + pp + d for q, pp, d in zip(queued, prefill, decode))
+        a1.set_ylim(0, top * 1.32)
+        # Decode is 98-100 % of the request, so the queued and prefill segments
+        # cannot be seen at all: three colours are in the legend and one is
+        # visible. That *is* the result - even the "prefill-heavy" shape (4x
+        # the input, a quarter of the output) spends 98 % of the request in
+        # decode - but a bar the reader cannot see does not report a number, so
+        # each segment is labelled with its absolute value as well.
         for i in range(len(names)):
             total = queued[i] + prefill[i] + decode[i]
-            for val, base, col in ((prefill[i], queued[i], "prefill"),
-                                   (decode[i], bot[i], "decode")):
-                if val / total > 0.06:
-                    a1.text(i, base + val / 2, f"{100 * val / total:.0f}%",
-                            ha="center", va="center", color="white", fontsize=8)
+            a1.text(i, bot[i] + decode[i] / 2,
+                    f"decode\n{decode[i]:,.0f} ms\n{100 * decode[i] / total:.1f}%",
+                    ha="center", va="center", color="white", fontsize=8)
+            a1.annotate(f"queued {queued[i]:.1f} ms ({100*queued[i]/total:.2f}%)\n"
+                        f"prefill {prefill[i]:.0f} ms ({100*prefill[i]/total:.2f}%)",
+                        xy=(i, bot[i]), xytext=(i, top * 1.10),
+                        ha="center", va="bottom", fontsize=7, color=C["grey"],
+                        arrowprops=dict(arrowstyle="->", color=C["grey"],
+                                        lw=0.7))
     else:
         a1.text(0.5, 0.5, "no I1/I2 phase records", ha="center",
                 transform=a1.transAxes, color=C["grey"])
@@ -109,8 +123,9 @@ def fig08(runs, outdir, groups=("I1", "I2"),
         a2.bar(x, qs, 0.5, label="server: queued", color=C["grey"])
         a2.bar(x, ps, 0.5, bottom=qs, label="server: prefill", color=C["blue"])
         bot = [a + b for a, b in zip(qs, ps)]
-        a2.bar(x, eps, 0.5, bottom=bot, label="outside prefill compute\n"
-               "(HTTP, serialization, tokenization)", color=C["red"])
+        a2.bar(x, eps, 0.5, bottom=bot,
+               label="outside prefill compute (HTTP, serialization, "
+                     "tokenization)", color=C["red"])
         for i in range(len(names2)):
             total = qs[i] + ps[i] + eps[i]
             if total:
@@ -120,14 +135,20 @@ def fig08(runs, outdir, groups=("I1", "I2"),
         a2.set_xticklabels(names2)
         a2.set_ylabel("Client-observed TTFT (ms)")
         a2.set_title("What TTFT is made of")
-        a2.legend(loc="upper left")
+        # Below the axes, not inside it: the three-line label for the residual
+        # sat on top of the prefill-heavy bar and collided with its own
+        # percentage annotation.
+        a2.legend(loc="upper center", bbox_to_anchor=(0.5, -0.22),
+                  fontsize=7, frameon=False, ncol=1)
+        a2.set_ylim(0, max(q + pp + e for q, pp, e in zip(qs, ps, eps)) * 1.12)
     else:
         a2.text(0.5, 0.5, "no TTFT decomposition data", ha="center",
                 transform=a2.transAxes, color=C["grey"])
         a2.set_axis_off()
 
     fig.suptitle("Phase-level timing from the instrumentation "
-                 "(Qwen2.5-7B, 1 GPU, rate 5)", y=1.02)
+                 "(Qwen2.5-7B, 1 GPU, rate 5)")
+    fig.tight_layout()
     return save(fig, "fig08_phase_breakdown", outdir)
 
 

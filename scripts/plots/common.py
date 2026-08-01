@@ -220,16 +220,25 @@ def aggregate(runs_list, field, source="bench"):
     return out
 
 
-def xpos(points):
-    """Map rate labels to x positions; 'inf' goes one step right of the max."""
+def xpos(points, inf_x=None):
+    """Map rate labels to x positions; 'inf' goes one step right of the max.
+
+    `inf_x` lets the caller pin the offline point to a shared position. Two
+    series with different rate grids (7B runs 1-8, 0.5B runs 1-32) would
+    otherwise each place 'inf' one of *their* steps past *their* maximum, so
+    the same condition would land at two different x positions in one panel
+    and the smaller model's offline point would read as a finite rate.
+    """
     finite = [float(p[0]) for p in points if p[0] != "inf"]
     if not finite:
-        return [0.0], ["inf"]
-    step = (max(finite) - min(finite)) / max(len(finite) - 1, 1) or 1.0
+        return [0.0 if inf_x is None else inf_x], ["inf"]
+    if inf_x is None:
+        step = (max(finite) - min(finite)) / max(len(finite) - 1, 1) or 1.0
+        inf_x = max(finite) + step
     xs, labels = [], []
     for p in points:
         if p[0] == "inf":
-            xs.append(max(finite) + step)
+            xs.append(inf_x)
             labels.append(INF_LABEL)
         else:
             xs.append(float(p[0]))
@@ -237,26 +246,48 @@ def xpos(points):
     return xs, labels
 
 
-def plot_series(ax, points, label, color, marker, ls="-"):
-    """Draw one aggregated series with error bars (stdev over repetitions)."""
+def plot_series(ax, points, label, color, marker, ls="-", inf_x=None,
+                set_ticks=True):
+    """Draw one aggregated series with error bars (stdev over repetitions).
+
+    `set_ticks=False` when several series share a panel: the caller then owns
+    the tick set, because a per-series call would leave the last series' grid
+    on the axis and hide the other series' rates.
+    """
     if not points:
         return
-    xs, labels = xpos(points)
+    xs, labels = xpos(points, inf_x)
     ys = [p[1] for p in points]
     es = [p[2] for p in points]
-    ax.errorbar(xs, ys, yerr=es, label=label, color=color, marker=marker,
-                linestyle=ls)
+
+    # The offline point is drawn detached from the finite-rate line. It is not
+    # the next step of the same sweep: 'inf' sends all requests at once, so it
+    # is a different arrival process, and for ShareGPT it is not even a stable
+    # measurement (seed spread 41 %, D25). Joining it with a line invites two
+    # misreadings. First, that the curve passed through the intervening x
+    # values - in figure 6 the 7B grid stops at 8 while the shared axis runs to
+    # 32, so a connecting line would sweep across rates 16 and 24 that were
+    # never run for that model. Second, that the offline point is simply "the
+    # curve continued", which is the reading D25 rules out.
+    n_fin = sum(1 for l in labels if l != INF_LABEL)
+    if n_fin:
+        ax.errorbar(xs[:n_fin], ys[:n_fin], yerr=es[:n_fin], label=label,
+                    color=color, marker=marker, linestyle=ls)
+    if n_fin < len(xs):
+        ax.errorbar(xs[n_fin:], ys[n_fin:], yerr=es[n_fin:],
+                    label=None if n_fin else label, color=color,
+                    marker=marker, linestyle="none")
     has_inf = any(l == INF_LABEL for l in labels)
-    if has_inf:
+    if has_inf and set_ticks:
         ax.set_xticks(xs)
         ax.set_xticklabels(labels)
     return xs
 
 
-def annotate_inf(ax, points):
+def annotate_inf(ax, points, inf_x=None):
     """Mark the offline ('inf') point so it is not read as a finite rate."""
     if any(p[0] == "inf" for p in points):
-        xs, _ = xpos(points)
+        xs, _ = xpos(points, inf_x)
         ax.axvline(xs[-1], color=C["grey"], lw=0.6, ls=":", alpha=0.7)
 
 

@@ -275,3 +275,81 @@
   grid) and on the closed-loop curve (figure 10), with figure 3 reporting what the standard
   tool reports and showing how far that depends on the definition. This closes the
   operational-definition task that PLAN scheduled for 8/3
+- D49 (2026-08-01): **Overlays with different rate grids were plotting the offline point
+  at two different x positions.** `xpos` placed 'inf' one of each series' own steps past
+  that series' own maximum, so in figure 6 the 7B offline point (grid 1-8) landed near
+  x=9 while the 0.5B one (grid 1-32) landed near x=36. The 7B curve therefore appeared to
+  spike at "rate 9" - a rate that was never run - and the panel carried two offline
+  marker lines. `plot_series` also called `set_xticks` per series, so the last series'
+  grid overwrote the axis and the other model's rates lost their labels; on a linear axis
+  the surviving 0.5B grid crowded 1, 2 and 4 into an unreadable clump.
+  Callers now pin a shared `inf_x` for the whole figure and own the tick set. Figure 6
+  additionally switches to a log x-axis, since its union grid spans 1-32; the labelled
+  ticks are the powers of two and the remaining rates (3, 5, 6, 12, 24) get unlabelled
+  minor ticks. Figures 4 and 7 span only 1-8 and stay linear, where every rate including
+  3, 5 and 6 can be labelled. Figures 1-3 draw a single grid and are unaffected
+- D50 (2026-08-01): **The offline point is drawn detached from the finite-rate line.**
+  'inf' is not the next step of the sweep: it sends all requests at once, so it is a
+  different arrival process, and on ShareGPT it is not a stable measurement either (seed
+  spread 41 %, D25). Connecting it invited two misreadings. In figure 6 the 7B grid stops
+  at 8 while the shared axis now runs to 32 (D49), so a connecting line swept across
+  rates 16 and 24 that were never run for that model - a reader could take a value off
+  it. More generally a joined line presents the offline point as "the curve continued",
+  which is exactly the reading D25 rules out. Every rate sweep now draws the finite grid
+  as a line and the offline point as a bare marker at the shared position, with the
+  existing dotted vertical rule separating them
+- D51 (2026-08-01): **Figure 6's throughput panel is log-scaled; the scale is chosen per
+  figure, not by a rule.** D47 decided log axes by metric type - latency log, throughput
+  linear - which is too crude. In figure 6 the two models' output throughput spans
+  181-3783 tok/s (21x), so on a linear axis the 7B curve occupied 13 % of the panel and
+  its saturation near 675 tok/s was unreadable; that saturation is half of what a
+  model-size comparison is for. On a log axis it occupies 38 %. Figure 4's throughput
+  panel stays linear: its two series overlap and cross near rate 5, and a log axis would
+  flatten that crossing. A numeric threshold separating 14x (figure 4) from 21x
+  (figure 6) would have been arbitrary, so `_overlay` takes an explicit `log_fields`
+  argument and figure 6 passes `output_throughput`
+- D52 (2026-08-01): **Figure 6 compares the two models at equal offered rate, not equal
+  utilisation.** 7B saturates near 3.5 req/s and 0.5B near 18-20, so at rate 4 the 7B is
+  at ~114 % of its capacity while the 0.5B is at ~22 % of its. The panel therefore
+  contrasts a saturated system with an idle one, and the resulting TTFT gap (195 ms vs
+  52 ms at rate 4) is not a pure model-speed difference. The comparison is still the one
+  a deployer wants - "at this load, which model?" - but the caption must state that
+  utilisation is not matched, or "the 0.5B is 4x faster on TTFT" will be read as an
+  intrinsic property
+- D53 (2026-08-01): **Figure 8's invisible segments are now labelled, and both legends
+  moved out of the plot area.** The stacked phase bars have the same failure mode the
+  first version of figure 5 had: decode is 98.0 % of a prefill-heavy request (512 in /
+  128 out) and 99.7 % of a decode-heavy one, so the queued and prefill segments cannot be
+  seen at all - three colours in the legend, one visible bar. That dominance *is* the
+  result, and a strong one: quadrupling the input and quartering the output still leaves
+  98 % of the request in decode, because 512 prompt tokens take 126 ms of prefill against
+  6304 ms of decode. But a segment the reader cannot see reports no number, so each bar
+  now carries the decode value inline and the queued/prefill values on a leader above the
+  bar (0.9 ms / 126 ms and 0.0 ms / 70 ms). On the right panel the three-line label for
+  the residual was drawn inside the axes and sat on top of the prefill-heavy bar,
+  colliding with its own percentage annotation; both panels now put the legend below the
+  axes
+- D54 (2026-08-01): **Figure 10 gains x error bars, and the pair of them is a result.**
+  Only the latency spread was drawn, which showed the noise at low concurrency and hid it
+  at high concurrency - the two are anti-correlated. Throughput CV is 0.4 % at
+  concurrency 1 and 12.9 % at 128; p95 latency CV runs the other way, 20.6 % down to
+  6.8 %. With one request in flight the aggregate rate is just 1 / mean latency over 60
+  requests and is very stable, while p95 is decided by whichever long ShareGPT completion
+  landed in that small sample. Saturated, the run's duration is set by the output-length
+  tail so throughput becomes the noisy axis, while p95 over 200 requests is well
+  determined. Both bars are now drawn at 45 % opacity behind the line so the two regimes
+  of the curve - flat from c=1 to 8 (19.2 to 20.6 s), rising from c=16 (23.0 to 27.8 s) -
+  stay readable. The throughput axis starts near the leftmost point instead of at zero
+- D55 (2026-08-01): Figure 9's CPU headroom note read "ceiling: 9 vCPU = 900 %" on a
+  panel whose axis tops out near 45 %, a number 20x off the scale that the reader cannot
+  relate to anything drawn. It now states the ratio: the vLLM server peaks at 43 % of one
+  core, which is 4.7 % of the 900 % the container has. That is the bottleneck claim the
+  panel exists to support - on 7B the host CPU is nowhere near the constraint, which is
+  what makes the 0.5B contrast in D27 meaningful
+- D56 (2026-08-01): Figure 11 presentation fixes. Its right panel carries a two-line title,
+  which collided with the suptitle because this figure never got the `tight_layout` change
+  D47 applied to the sweep figures; the title is also shortened. The left panel printed
+  "1.00x" on both tp=1 bars - a ratio that is 1 by construction, but which reads as a
+  measured speed-up of one - and now prints "baseline". The right panel's legend has five
+  entries spanning two y-axes and sat over the middle of the plot, which is exactly where
+  the step-time and throughput-gain curves cross; it moves below the axes

@@ -61,7 +61,7 @@ def fig11(runs, outdir, rate="8"):
         print("  SKIP fig11: need at least two of G1/G2/G4")
         return None
 
-    fig, (a1, a2, a3) = plt.subplots(1, 3, figsize=(13.5, 4.0))
+    fig, (a1, a2, a3) = plt.subplots(1, 3, figsize=(13.5, 4.6))
 
     # ---- left: decode-only vs prefill-carrying steps ---------------------
     width = 0.35
@@ -78,12 +78,15 @@ def fig11(runs, outdir, rate="8"):
     a1.bar([x + width / 2 for x in xs], pre, width, color=C["orange"],
            label="steps carrying prefill")
     for i, (d, p) in enumerate(zip(dec, pre)):
-        if dec[0]:
-            a1.annotate(f"{dec[0]/d:.2f}x", (i - width / 2, d), ha="center",
-                        va="bottom", fontsize=7, color=C["grey"])
-        if pre[0]:
-            a1.annotate(f"{pre[0]/p:.2f}x", (i + width / 2, p), ha="center",
-                        va="bottom", fontsize=7, color=C["grey"])
+        # tp=1 is the reference, so its ratio is 1.00 by construction. Printing
+        # "1.00x" there reads as a measured speed-up of one; say "baseline".
+        for val, base, xoff in ((d, dec[0], -width / 2),
+                                (p, pre[0], width / 2)):
+            if not base:
+                continue
+            txt = "baseline" if i == 0 else f"{base / val:.2f}x"
+            a1.annotate(txt, (i + xoff, val), ha="center", va="bottom",
+                        fontsize=7, color=C["grey"])
     a1.set_xticks(list(xs))
     a1.set_xticklabels([LABELS[g] for g in have])
     a1.set_ylabel("Model execution time per step (ms)")
@@ -123,7 +126,7 @@ def fig11(runs, outdir, rate="8"):
                     label=f"{LABELS[g]} step time")
     a3.set_xlabel("Request rate (req/s)")
     a3.set_ylabel("Decode step time (ms)")
-    a3.set_title("Step speedup does not become\nthroughput until saturation")
+    a3.set_title("Speedup becomes throughput\nonly at saturation")
 
     a4 = a3.twinx()
     base = "G1"
@@ -142,12 +145,16 @@ def fig11(runs, outdir, rate="8"):
                     marker=MARKERS[have.index(g)], markerfacecolor="white",
                     label=f"{LABELS[g]} throughput gain")
     a4.set_ylabel("Throughput gain over tp=1 (%)")
+    # Five entries across two y-axes: inside the axes they covered the middle
+    # of the panel, which is where the two families of curves cross.
     h1, l1 = a3.get_legend_handles_labels()
     h2, l2 = a4.get_legend_handles_labels()
-    a3.legend(h1 + h2, l1 + l2, fontsize=6, frameon=False, loc="center left")
+    a3.legend(h1 + h2, l1 + l2, fontsize=6, frameon=False,
+              loc="upper center", bbox_to_anchor=(0.5, -0.20), ncol=2)
 
     fig.suptitle("Where tensor parallelism helps: step-level decomposition "
                  "(Qwen2.5-7B, ShareGPT, one 4x A40 instance)")
+    fig.tight_layout()
     return save(fig, "fig11_step_parallelism", outdir)
 
 

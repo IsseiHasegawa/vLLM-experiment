@@ -91,8 +91,19 @@ def fig09(runs, outdir, group="S1"):
     # rather than drawing the line keeps the axis readable: the server sits
     # near 40 % on 7B and 144 % on 0.5B, so a line at 900 would flatten both.
     # Subtract ~2-3 % from the server series for the logger's own cost (D36).
-    a2.annotate("ceiling: 9 vCPU = 900 %", xy=(0.02, 0.93),
-                xycoords="axes fraction", fontsize=7, color=C["grey"])
+    # State the headroom as a ratio, not as a number 20x off the axis: the
+    # panel tops out near 45 % and a bare "900 %" cannot be related to it.
+    peak = max((mean_of(resource_rows(r), "cpu_server_pct")
+                for r in select(runs, group=group)), default=0.0)
+    if peak:
+        # The panel has exactly one free band. The server curve occupies
+        # 28-41 %, the client 3-8 %, and the legend sits at 20-27 %, so the
+        # note goes at 11-17 %. Upper-left crossed the server curve at rates
+        # 5-6 and mid-left ran into the legend.
+        a2.annotate(f"vLLM server peaks at {peak:.0f} % of one core\n"
+                    f"= {peak / 9:.1f} % of the 900 % available (9 vCPU)",
+                    xy=(0.03, 0.29), xycoords="axes fraction", fontsize=7,
+                    color=C["grey"], va="center")
     a2.set_xlabel("Request rate (req/s)")
     a2.set_ylabel("CPU (% of one core)")
     a2.set_title("Process CPU (per-process, container-attributable)")

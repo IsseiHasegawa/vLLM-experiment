@@ -15,8 +15,9 @@ import matplotlib.pyplot as plt
 
 import statistics as st
 
-from common import (C, MARKERS, SERIES, aggregate, annotate_inf, log_latency,
-                    phase_records, plot_series, save, select, xpos)
+from common import (C, INF_LABEL, MARKERS, SERIES, aggregate, annotate_inf,
+                    log_latency, phase_records, plot_series, save, select,
+                    xpos)
 
 # Panels for these fields get a log y-axis; see common.log_latency for why.
 # Throughput stays linear: it spans well under one order of magnitude, and the
@@ -29,11 +30,41 @@ LOG_FIELDS = {"p50_ttft_ms", "p95_ttft_ms", "p99_ttft_ms",
               "p50_e2el_ms", "p95_e2el_ms", "mean_e2el_ms"}
 
 
-def _panel(ax, runs, group, field, label, color, marker, ls="-"):
+def _panel(ax, runs, group, field, label, color, marker, ls="-", inf_x=None,
+           set_ticks=True):
     pts = aggregate(select(runs, group=group), field)
-    plot_series(ax, pts, label, color, marker, ls)
-    annotate_inf(ax, pts)
+    plot_series(ax, pts, label, color, marker, ls, inf_x=inf_x,
+                set_ticks=set_ticks)
+    annotate_inf(ax, pts, inf_x)
     return pts
+
+
+def _rate_axis(ax, groups_pts, inf_x):
+    """One tick set covering every group's rate grid, shared 'inf' at the end.
+
+    Overlays can mix grids - figure 6 puts 7B (1-8 req/s) against 0.5B
+    (1-32 req/s) - so the union spans 1 to 32 and is unreadable on a linear
+    axis, where 1, 2 and 4 collide while 24 and 32 sit far apart. A log axis
+    spaces them evenly. Only a power-of-two subset is labelled; the remaining
+    rates get unlabelled minor ticks so the points are still locatable.
+    """
+    finite = sorted({float(p[0]) for pts in groups_pts for p in pts
+                     if p[0] != "inf"})
+    if not finite:
+        return
+    # Only switch to log when the grids really are far apart. Figure 6 mixes
+    # 1-8 (7B) with 1-32 (0.5B) and needs it; figures 4 and 7 stay on 1-8,
+    # where a linear axis can label every rate including 3, 5 and 6.
+    wide = max(finite) / min(finite) >= 16
+    if wide:
+        ax.set_xscale("log")
+    major = [r for r in finite if r in (1, 2, 4, 8, 16, 32)] if wide else finite
+    ax.set_xticks(major + [inf_x])
+    ax.set_xticklabels([f"{r:g}" for r in major] + [INF_LABEL])
+    minor = [r for r in finite if r not in major]
+    if minor:
+        ax.set_xticks(minor, minor=True)
+        ax.set_xticklabels([], minor=True)
 
 
 def fig01(runs, outdir):
@@ -153,18 +184,26 @@ def fig03(runs, outdir):
     return save(fig, "fig03_throughput_vs_rate", outdir)
 
 
-def _overlay(runs, outdir, groups, names, title, name, fields=None):
+def _overlay(runs, outdir, groups, names, title, name, fields=None,
+             log_fields=()):
     """Two-panel overlay: p95 TTFT and output throughput for each group."""
     fields = fields or [("p95_ttft_ms", "TTFT p95 (ms)"),
                         ("output_throughput", "Output throughput (tok/s)")]
-    fig, axes = plt.subplots(1, len(fields), figsize=(4.2 * len(fields), 3.4))
+    fig, axes = plt.subplots(1, len(fields), figsize=(4.4 * len(fields), 3.6))
     if len(fields) == 1:
         axes = [axes]
+    # One offline position for the whole figure, derived from the widest grid.
+    probe = [aggregate(select(runs, group=g), fields[0][0]) for g in groups]
+    fin_all = [float(p[0]) for pts in probe for p in pts if p[0] != "inf"]
+    inf_x = max(fin_all) * 1.35 if fin_all else 1.0
     for ax, (field, ylabel) in zip(axes, fields):
+        pts_all = []
         for i, (g, nm) in enumerate(zip(groups, names)):
-            _panel(ax, runs, g, field, nm, SERIES[i], MARKERS[i],
-                   "-" if i == 0 else "--")
-        if field in LOG_FIELDS:
+            pts_all.append(_panel(ax, runs, g, field, nm, SERIES[i],
+                                  MARKERS[i], "-" if i == 0 else "--",
+                                  inf_x=inf_x, set_ticks=False))
+        _rate_axis(ax, pts_all, inf_x)
+        if field in LOG_FIELDS or field in log_fields:
             log_latency(ax)
             ylabel = ylabel.replace(")", ", log scale)")
         ax.set_xlabel("Request rate (req/s)")
@@ -183,13 +222,21 @@ def fig04(runs, outdir):
 
 
 def fig06(runs, outdir):
+    # The throughput panel needs a log axis here, unlike in figure 4. The two
+    # models' throughputs span 181-3783 tok/s (21x): on a linear axis the 7B
+    # curve occupies 13 % of the panel and its saturation near 675 tok/s - half
+    # of what this figure is about - is unreadable. Figure 4 keeps a linear
+    # throughput axis because its two series overlap and cross near rate 5,
+    # which a log axis would flatten. The choice is made per figure rather than
+    # by a threshold: a cutoff that separated 14x from 21x would be arbitrary.
     return _overlay(runs, outdir, ["S1", "S3"],
                     ["Qwen2.5-7B", "Qwen2.5-0.5B"],
                     "Effect of model size (ShareGPT, 1 GPU)",
                     "fig06_model_comparison",
                     fields=[("p95_ttft_ms", "TTFT p95 (ms)"),
                             ("p95_tpot_ms", "TPOT p95 (ms/token)"),
-                            ("output_throughput", "Output throughput (tok/s)")])
+                            ("output_throughput", "Output throughput (tok/s)")],
+                    log_fields=("output_throughput",))
 
 
 def fig07(runs, outdir):
@@ -235,33 +282,54 @@ def fig10(runs, outdir):
         by = {}
         for r in rs:
             by.setdefault(r["max_concurrency"], []).append(r)
-        xs, ys, es, labels = [], [], [], []
+        xs, ys, exs, eys, labels = [], [], [], [], []
         for c in sorted(by, key=lambda x: int(x)):
             thr = [r["bench"]["output_throughput"] for r in by[c]]
             lat = [r["bench"]["p95_e2el_ms"] / 1000 for r in by[c]]
             xs.append(st.mean(thr))
             ys.append(st.mean(lat))
-            es.append(st.stdev(lat) if len(lat) > 1 else 0.0)
+            exs.append(st.stdev(thr) if len(thr) > 1 else 0.0)
+            eys.append(st.stdev(lat) if len(lat) > 1 else 0.0)
             labels.append(c)
-        return xs, ys, es, labels
+        return xs, ys, exs, eys, labels
 
-    xs, ys, es, labels = curve(c2)
+    xs, ys, exs, eys, labels = curve(c2)
 
-    fig, ax = plt.subplots(figsize=(5.4, 3.6))
-    ax.errorbar(xs, ys, yerr=es, color=SERIES[0], marker=MARKERS[0],
-                label="C2 (session B instance)" if c2x else None)
+    fig, ax = plt.subplots(figsize=(5.8, 4.0))
+
+    # Error bars on both axes. The two are anti-correlated and the pair is a
+    # result in itself: at concurrency 1 the throughput spread is 0.4 % but the
+    # p95 latency spread is 20.6 %, and at 128 it is 12.9 % against 6.8 %. With
+    # one request in flight the aggregate rate is just 1 / mean latency over 60
+    # requests and is very stable, while p95 is decided by whichever long
+    # ShareGPT completion happened to land in that small sample. Saturated, the
+    # run's duration is set by the tail so throughput becomes the noisy axis,
+    # while p95 over 200 requests is well determined. Drawing only yerr, as the
+    # first version did, showed the low-concurrency noise and hid the
+    # high-concurrency noise entirely.
+    ebar = dict(elinewidth=1.0, capsize=2.5, alpha=0.45, zorder=1)
+    ax.errorbar(xs, ys, yerr=eys, xerr=exs, color=SERIES[0], fmt="none", **ebar)
+    ax.plot(xs, ys, color=SERIES[0], marker=MARKERS[0], zorder=3,
+            label="C2 (session B instance)" if c2x else None)
     for x, y, l in zip(xs, ys, labels):
-        ax.annotate(l, (x, y), textcoords="offset points", xytext=(5, -9),
-                    fontsize=7, color=C["grey"])
+        ax.annotate(l, (x, y), textcoords="offset points", xytext=(6, -10),
+                    fontsize=7, color=C["grey"], zorder=4)
     if c2x:
-        xx, xy, xe, xl = curve(c2x)
-        ax.errorbar(xx, xy, yerr=xe, color=SERIES[0], marker=MARKERS[0],
-                    mfc="white", linestyle="none",
-                    label="C2x (session C instance)")
+        xx, xy, xex, xey, xl = curve(c2x)
+        ax.errorbar(xx, xy, yerr=xey, xerr=xex, color=SERIES[0], fmt="none",
+                    **ebar)
+        ax.plot(xx, xy, color=SERIES[0], marker=MARKERS[0], mfc="white",
+                linestyle="none", zorder=3,
+                label="C2x (session C instance)")
         for x, y, l in zip(xx, xy, xl):
             ax.annotate(l, (x, y), textcoords="offset points",
-                        xytext=(5, -9), fontsize=7, color=C["grey"])
-        ax.legend(fontsize=7, frameon=False)
+                        xytext=(6, 4), fontsize=7, color=C["grey"], zorder=4)
+        ax.legend(fontsize=7, frameon=False, loc="upper left")
+    # Start the throughput axis near the data rather than at 0: the leftmost
+    # point is 32 tok/s and the empty strip below it carries no information.
+    lo = min(xs + (xx if c2x else []))
+    hi = max(xs + (xx if c2x else []))
+    ax.set_xlim(lo - 0.08 * (hi - lo), hi + 0.10 * (hi - lo))
     ax.set_xlabel("Output throughput (tok/s)")
     ax.set_ylabel("End-to-end latency p95 (s)")
     ax.set_title("Closed-loop latency vs throughput\n"
