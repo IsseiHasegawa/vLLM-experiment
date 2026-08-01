@@ -233,3 +233,45 @@
   only figure drawing on the step log's phase split, and it is where the assignment's
   "time and resource usage during the prefill phase and the decode phase" requirement meets
   the "parallel processing options" requirement. The smoke test now expects 11 figures
+- D47 (2026-08-01): **Latency panels moved to a log y-axis; figure 5 rebuilt as a CDF.**
+  Reviewing the rendered figures against the underlying numbers exposed two presentation
+  faults that changed what the figures appeared to claim.
+  *Latency panels (fig01, fig02, fig04-left, fig06-left/middle, fig07-left/middle).* Once
+  the offline (`inf`) point shares an axis with the finite rates, the range is ~90x
+  (151 ms at rate 1 to 6767 ms offline on 7B/ShareGPT). On a linear axis the whole finite
+  grid occupied ~1 % of the panel and rendered as a flat line, so figure 1 read as "TTFT is
+  constant until capacity, then explodes". It is not: p95 TTFT rises 62 % from rate 1 to
+  rate 8, and figure 4's dataset gap at rate 8 (ShareGPT 245 ms vs random 211 ms) was
+  invisible for the same reason. A log axis with ticks at 1/2/5 per decade raises the
+  finite-rate share to ~10-14 % and separates p50 from p95. Throughput panels stay linear:
+  they span well under one order of magnitude, and the ShareGPT/random crossing near rate 5
+  in figure 4 and the tp ordering in figure 7 read best on a linear scale.
+  *Figure 5.* The density histogram could not show these two workloads together. `random`
+  is a fixed length, so its density is a delta spike that owned the y-axis and flattened
+  both ShareGPT curves to invisibility - four series were drawn and one was visible - while
+  the nominal ShareGPT tail (66 076 tokens) stretched the x-axis until the served data
+  occupied 1.5 % of the panel, and the numeric caption collided with the axis labels.
+  Rebuilt as a cumulative distribution on a log x-axis: bounded y, fixed lengths render as
+  clean steps, four orders of magnitude fit, and the nominal/realised separation at the
+  ~1024-token admission cutoff (D26) is now the visible feature it should always have been
+- D48 (2026-08-01): **Figure 3 now plots two definitions of "achieved rate", and the
+  saturation argument is moved off it.** D24 established that the client's
+  `request_throughput` is completed / measured-duration, and that the measured duration
+  runs to the *last* completion. Measured on S1 that drain is 12.2 s at rate 1 and 32.1 s
+  at rate 8, so the reported rate is biased low at every point - 0.95 at an offered rate of
+  1, where the server is plainly keeping up. A reader taking a capacity off that curve
+  reads a definitional artefact.
+  The alternative - completions at or before the last arrival, over the arrival span -
+  gives a materially different curve: 0.97 / 1.90 / 2.75 / 3.48 / 4.08 / 4.59 / 5.18 at
+  rates 1-8, against 0.95 / 1.71 / 2.33 / 2.83 / 3.20 / 3.37 / 3.54 for the client metric.
+  The first plateaus near 3.5; the second is still climbing at rate 8. It is not unbiased
+  either: requests in flight when arrivals stop are never counted, a loss of roughly
+  rate x latency that grows with load.
+  Both are drawn. Neither is the capacity. The substantive point is that on this system
+  achieved throughput is a weak saturation detector at all: vLLM admits every arrival into
+  the running batch, so backlog appears as batch growth and rising latency rather than as a
+  queue or a throughput ceiling (queueing delay is ~0 everywhere in session A). The
+  saturation claim therefore rests on latency (figure 1: p95 TTFT +62 % across the finite
+  grid) and on the closed-loop curve (figure 10), with figure 3 reporting what the standard
+  tool reports and showing how far that depends on the definition. This closes the
+  operational-definition task that PLAN scheduled for 8/3

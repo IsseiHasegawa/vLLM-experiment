@@ -58,28 +58,66 @@ def fig05(stats_path="results/dataset_stats.json", outdir="figures", repo="."):
     stats = json.loads(p.read_text())
     real = _realised(repo)
 
-    fig, (a1, a2) = plt.subplots(1, 2, figsize=(8.6, 3.4))
+    fig, (a1, a2) = plt.subplots(1, 2, figsize=(9.4, 4.0))
     colors = {"sharegpt": C["blue"], "random": C["orange"]}
+
+    # Cumulative distributions on a log x-axis, not density histograms. A
+    # histogram cannot show these two workloads on one pair of axes: `random`
+    # is a fixed length, so its density is a delta spike that owns the entire
+    # y-axis and flattens the ShareGPT curve to invisibility (in the first
+    # version of this figure only one of the four series was actually
+    # visible), while the nominal ShareGPT tail at 66 076 tokens stretches the
+    # x-axis until the realised data - the part that was actually served -
+    # occupies 1.5 % of the panel. A CDF has a bounded y-axis, renders a fixed
+    # length as a clean step, and on a log x-axis carries four orders of
+    # magnitude at once.
+    def cdf(ax, vals, color, ls, label, lw=1.6, alpha=1.0, z=2):
+        vals = sorted(v for v in vals if v > 0)
+        if not vals:
+            return
+        n = len(vals)
+        ax.step(vals, [(i + 1) / n for i in range(n)], where="post",
+                color=color, linestyle=ls, linewidth=lw, alpha=alpha,
+                zorder=z, label=label)
+
     for name, d in stats.items():
         col = colors.get(name, C["green"])
         for ax, key in ((a1, "input_lens"), (a2, "output_lens")):
-            vals = d.get(key) or []
-            if not vals:
-                continue
-            ax.hist(vals, bins=60, histtype="step", linewidth=1.5,
-                    color=col, label=f"{name} nominal (n={len(vals)})",
-                    density=True)
+            cdf(ax, d.get(key) or [], col, "-", f"{name} nominal (source file)")
         rv = real.get(name)
         if rv:
             for ax, key in ((a1, "input_lens"), (a2, "output_lens")):
-                ax.hist(rv[key], bins=60, histtype="stepfilled", alpha=0.35,
-                        color=col, density=True,
-                        label=f"{name} realised (n={len(rv[key])})")
+                cdf(ax, rv[key], col, "--", f"{name} realised (served)",
+                    lw=3.2, alpha=0.45, z=1)
+
     for ax, t in ((a1, "Input (prompt) length"), (a2, "Output length")):
-        ax.set_xlabel("tokens")
-        ax.set_ylabel("density")
+        ax.set_xscale("log")
+        ax.set_xlabel("tokens (log scale)")
+        ax.set_ylabel("fraction of requests <= x")
+        ax.set_ylim(0, 1.02)
         ax.set_title(t)
-        ax.legend()
+        ax.grid(True, which="minor", alpha=0.12)
+        for level in (0.5, 0.95):
+            ax.axhline(level, color=C["grey"], lw=0.6, ls=":", alpha=0.7)
+        ax.legend(fontsize=7, loc="upper left", frameon=False)
+
+    # The harness admits prompts of roughly 1024 tokens or fewer (D26). This is
+    # where the nominal and realised ShareGPT curves separate, and it is why
+    # plotting the nominal distribution alone overstates the served tail by 65x.
+    a1.axvline(1024, color=C["grey"], lw=0.8, ls="-.", alpha=0.8)
+    # Label the cutoff with rotated text beside the line rather than with a
+    # leader arrow: an arrow from any free area to the separation point at
+    # (1024, ~0.96) has to cross the panel diagonally and clips the legend.
+    # Below y~0.9 the region right of x~300 is empty, so the label sits there.
+    a1.text(1180, 0.06, "harness admission cutoff ~1024 tokens",
+            rotation=90, va="bottom", ha="left", fontsize=7, color=C["grey"])
+    # Only the prompt length is filtered; on the output side nominal and
+    # realised lie on top of each other, which is itself the statement. Placed
+    # bottom-left, clear of the legend in the upper-left corner.
+    a2.annotate("no filtering on the output side:\n"
+                "nominal and realised coincide",
+                xy=(0.03, 0.06), xycoords="axes fraction", fontsize=7,
+                color=C["grey"])
 
     # A short numeric summary is more useful in a paper than the shape alone.
     def q(v, f):
@@ -89,22 +127,25 @@ def fig05(stats_path="results/dataset_stats.json", outdir="figures", repo="."):
     lines = []
     for name, d in stats.items():
         st_ = d.get("summary", {})
-        if st_:
-            lines.append(f"{name} nominal: input p50 {st_.get('input_p50', '?')}, "
-                         f"p95 {st_.get('input_p95', '?')}, max "
-                         f"{st_.get('input_max', '?')}; output p50 "
-                         f"{st_.get('output_p50', '?')}, p95 "
-                         f"{st_.get('output_p95', '?')}")
         rv = real.get(name)
+        if st_:
+            lines.append(
+                f"{name:9s} nominal   in p50 {st_.get('input_p50','?'):>5} "
+                f"p95 {st_.get('input_p95','?'):>5} max {st_.get('input_max','?'):>6}"
+                f"  |  out p50 {st_.get('output_p50','?'):>5} "
+                f"p95 {st_.get('output_p95','?'):>5}")
         if rv:
             i, o = rv["input_lens"], rv["output_lens"]
-            lines.append(f"{name} realised: input p50 {q(i, .5)}, p95 {q(i, .95)}, "
-                         f"max {max(i)}; output p50 {q(o, .5)}, p95 {q(o, .95)}")
+            lines.append(
+                f"{name:9s} realised  in p50 {q(i,.5):>5} p95 {q(i,.95):>5} "
+                f"max {max(i):>6}  |  out p50 {q(o,.5):>5} p95 {q(o,.95):>5} "
+                f"max {max(o):>6}")
     if lines:
-        fig.text(0.5, -0.12, "\n".join(lines), ha="center", fontsize=8,
-                 color=C["grey"])
+        fig.subplots_adjust(bottom=0.34)
+        fig.text(0.5, 0.015, "\n".join(lines), ha="center", va="bottom",
+                 fontsize=7, family="monospace", color=C["grey"])
 
-    fig.suptitle("Token-length distributions of the two workloads", y=1.02)
+    fig.suptitle("Token-length distributions of the two workloads: source file vs actually served")
     return save(fig, "fig05_dataset_distributions", outdir)
 
 

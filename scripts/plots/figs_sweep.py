@@ -13,8 +13,20 @@ Error bars are the standard deviation over the 3 repetitions of each point
 
 import matplotlib.pyplot as plt
 
-from common import (C, MARKERS, SERIES, aggregate, annotate_inf, plot_series,
-                    save, select)
+import statistics as st
+
+from common import (C, MARKERS, SERIES, aggregate, annotate_inf, log_latency,
+                    phase_records, plot_series, save, select, xpos)
+
+# Panels for these fields get a log y-axis; see common.log_latency for why.
+# Throughput stays linear: it spans well under one order of magnitude, and the
+# ShareGPT/random crossing in figure 4 and the tp ordering in figure 7 are both
+# easiest to read on a linear scale.
+LOG_FIELDS = {"p50_ttft_ms", "p95_ttft_ms", "p99_ttft_ms",
+              "p50_tpot_ms", "p95_tpot_ms", "p99_tpot_ms",
+              "p50_itl_ms", "p95_itl_ms", "p99_itl_ms",
+              "mean_ttft_ms", "mean_tpot_ms", "mean_itl_ms",
+              "p50_e2el_ms", "p95_e2el_ms", "mean_e2el_ms"}
 
 
 def _panel(ax, runs, group, field, label, color, marker, ls="-"):
@@ -28,8 +40,9 @@ def fig01(runs, outdir):
     fig, ax = plt.subplots(figsize=(5.2, 3.4))
     _panel(ax, runs, "S1", "p50_ttft_ms", "p50", SERIES[0], MARKERS[0])
     _panel(ax, runs, "S1", "p95_ttft_ms", "p95", SERIES[1], MARKERS[1], "--")
+    log_latency(ax)
     ax.set_xlabel("Request rate (req/s)")
-    ax.set_ylabel("TTFT (ms)")
+    ax.set_ylabel("TTFT (ms, log scale)")
     ax.set_title("Time to first token vs arrival rate\nQwen2.5-7B, ShareGPT, 1 GPU")
     ax.legend(title="percentile")
     return save(fig, "fig01_ttft_vs_rate", outdir)
@@ -39,24 +52,85 @@ def fig02(runs, outdir):
     fig, (a1, a2) = plt.subplots(1, 2, figsize=(8.4, 3.4))
     _panel(a1, runs, "S1", "p50_tpot_ms", "p50", SERIES[0], MARKERS[0])
     _panel(a1, runs, "S1", "p95_tpot_ms", "p95", SERIES[1], MARKERS[1], "--")
-    a1.set_ylabel("TPOT (ms/token)")
+    a1.set_ylabel("TPOT (ms/token, log scale)")
     a1.set_title("Time per output token")
     _panel(a2, runs, "S1", "p50_itl_ms", "p50", SERIES[0], MARKERS[0])
     _panel(a2, runs, "S1", "p95_itl_ms", "p95", SERIES[1], MARKERS[1], "--")
-    a2.set_ylabel("ITL (ms)")
+    a2.set_ylabel("ITL (ms, log scale)")
     a2.set_title("Inter-token latency")
     for a in (a1, a2):
+        log_latency(a)
         a.set_xlabel("Request rate (req/s)")
         a.legend(title="percentile")
-    fig.suptitle("Decode-side latency vs arrival rate (Qwen2.5-7B, ShareGPT, 1 GPU)",
-                 y=1.02)
+    fig.suptitle("Decode-side latency vs arrival rate "
+                 "(Qwen2.5-7B, ShareGPT, 1 GPU)")
+    fig.tight_layout()
     return save(fig, "fig02_decode_latency_vs_rate", outdir)
 
 
+def _arrival_window_rate(runs, group):
+    """Completions inside the arrival window, divided by that window.
+
+    The client's own `request_throughput` is completed / (measurement
+    duration), and the measurement duration runs until the *last* request
+    finishes. That drain is 12 s at rate 1 and 32 s at rate 8 here, so the
+    reported rate is biased low at every point, including points where the
+    server is comfortably keeping up (0.95 at an offered rate of 1). Reading a
+    capacity off that curve therefore reads a definitional artefact (D24).
+
+    This alternative counts requests that completed at or before the last
+    arrival, over the arrival span. It removes the drain but introduces the
+    opposite bias: requests still in flight when arrivals stop are never
+    counted, which costs roughly rate x latency requests and grows with load.
+    Neither series is unbiased. Plotting both is the honest statement: the
+    achieved rate is definition-sensitive, and on this system - where vLLM
+    admits every arrival into the running batch, so backlog appears as batch
+    growth rather than as a queue - achieved throughput is a weak saturation
+    detector. The saturation argument rests on latency (figure 1) and on the
+    closed-loop curve (figure 10).
+    """
+    out = []
+    by_rate = {}
+    for run in select(runs, group=group):
+        rate = str(run.get("request_rate"))
+        if rate == "inf":
+            continue
+        recs = phase_records(run, "requests")
+        if not recs:
+            continue
+        arrivals = [r["arrival_ts"] for r in recs if "arrival_ts" in r]
+        if not arrivals:
+            continue
+        t0, t1 = min(arrivals), max(arrivals)
+        span = t1 - t0
+        if span <= 0:
+            continue
+        done = sum(1 for r in recs if r["ts"] <= t1)
+        by_rate.setdefault(rate, []).append(done / span)
+    for rate, vals in by_rate.items():
+        m = st.mean(vals)
+        e = st.stdev(vals) if len(vals) > 1 else 0.0
+        out.append((rate, m, e, len(vals)))
+    out.sort(key=lambda p: float(p[0]))
+    return out
+
+
 def fig03(runs, outdir):
-    fig, (a1, a2) = plt.subplots(1, 2, figsize=(8.4, 3.4))
-    pts = _panel(a1, runs, "S1", "request_throughput", "achieved",
+    fig, (a1, a2) = plt.subplots(1, 2, figsize=(8.8, 3.6))
+    pts = _panel(a1, runs, "S1", "request_throughput",
+                 "achieved: completed / measured duration",
                  SERIES[0], MARKERS[0])
+    # Second definition of the same quantity, drain excluded; see
+    # _arrival_window_rate for why both are shown and neither is unbiased.
+    aw = _arrival_window_rate(runs, "S1")
+    if aw:
+        xs_aw, _ = xpos(pts)
+        xmap = {p[0]: x for p, x in zip(pts, xs_aw)}
+        xs2 = [xmap[p[0]] for p in aw if p[0] in xmap]
+        a1.errorbar(xs2, [p[1] for p in aw], yerr=[p[2] for p in aw],
+                    color=SERIES[1], marker=MARKERS[1], linestyle="--",
+                    markerfacecolor="white",
+                    label="achieved: completed / arrival window")
     # Reference line: achieved == requested. Departure marks saturation.
     finite = [(float(p[0]), p[1]) for p in pts if p[0] != "inf"]
     if finite:
@@ -64,7 +138,7 @@ def fig03(runs, outdir):
         a1.plot(xs, xs, color=C["grey"], lw=0.8, ls=":", label="requested")
     a1.set_ylabel("Request throughput (req/s)")
     a1.set_title("Achieved vs requested rate")
-    a1.legend()
+    a1.legend(fontsize=7)
     _panel(a2, runs, "S1", "output_throughput", "output tokens",
            SERIES[2], MARKERS[2])
     _panel(a2, runs, "S1", "total_token_throughput", "total tokens",
@@ -74,7 +148,8 @@ def fig03(runs, outdir):
     a2.legend()
     for a in (a1, a2):
         a.set_xlabel("Request rate (req/s)")
-    fig.suptitle("Throughput and saturation (Qwen2.5-7B, ShareGPT, 1 GPU)", y=1.02)
+    fig.suptitle("Throughput and saturation (Qwen2.5-7B, ShareGPT, 1 GPU)")
+    fig.tight_layout()
     return save(fig, "fig03_throughput_vs_rate", outdir)
 
 
@@ -89,10 +164,14 @@ def _overlay(runs, outdir, groups, names, title, name, fields=None):
         for i, (g, nm) in enumerate(zip(groups, names)):
             _panel(ax, runs, g, field, nm, SERIES[i], MARKERS[i],
                    "-" if i == 0 else "--")
+        if field in LOG_FIELDS:
+            log_latency(ax)
+            ylabel = ylabel.replace(")", ", log scale)")
         ax.set_xlabel("Request rate (req/s)")
         ax.set_ylabel(ylabel)
-        ax.legend()
-    fig.suptitle(title, y=1.02)
+        ax.legend(fontsize=8)
+    fig.suptitle(title)
+    fig.tight_layout()
     return save(fig, name, outdir)
 
 

@@ -35,6 +35,8 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
+from matplotlib.ticker import (LogLocator, NullFormatter,  # noqa: E402
+                               ScalarFormatter)
 
 # --------------------------------------------------------------------------
 # style
@@ -256,6 +258,32 @@ def annotate_inf(ax, points):
     if any(p[0] == "inf" for p in points):
         xs, _ = xpos(points)
         ax.axvline(xs[-1], color=C["grey"], lw=0.6, ls=":", alpha=0.7)
+
+
+def log_latency(ax):
+    """Put a latency axis on a log scale, with readable (non-exponent) ticks.
+
+    Latency in these sweeps spans two orders of magnitude once the offline
+    point shares the axis: on 7B/ShareGPT the p95 TTFT is 151 ms at rate 1,
+    245 ms at rate 8 and 6767 ms at rate inf. On a linear axis the entire
+    finite-rate range - the part that answers "how does the arrival rate
+    affect latency" - is pressed into the bottom 3 % of the panel and reads as
+    a flat line, so the figure appears to claim that latency is constant up to
+    capacity and then explodes. It is not: p95 TTFT rises 62 % across the
+    finite grid, and the ShareGPT/random gap at rate 8 (245 vs 211 ms) is a
+    result of its own. A log axis raises the finite-rate share of the panel
+    from 3 % to 24 %, keeps the offline point visible, and separates p50 from
+    p95 (a factor of ~2) which the linear axis also hides.
+
+    Major ticks at 1, 2 and 5 per decade so a two-decade range still carries
+    enough labels to read values off the axis.
+    """
+    ax.set_yscale("log")
+    ax.yaxis.set_major_locator(LogLocator(base=10.0, subs=(1.0, 2.0, 5.0),
+                                          numticks=12))
+    ax.yaxis.set_major_formatter(ScalarFormatter())
+    ax.yaxis.set_minor_formatter(NullFormatter())
+    ax.grid(True, which="minor", axis="y", alpha=0.12)
 
 
 # --------------------------------------------------------------------------
