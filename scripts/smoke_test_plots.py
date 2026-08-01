@@ -183,7 +183,7 @@ def main():
         # and that every figure the synthetic campaign can support was made.
         # Without this the test reported success while make_figures logged
         # "0 completed runs" and produced blank axes.
-        expect = 5 if pilot_mode else 10
+        expect = 5 if pilot_mode else 11
         loaded = 0
         for line in proc.stdout.splitlines():
             if line.strip().endswith("completed runs"):

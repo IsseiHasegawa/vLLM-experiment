@@ -208,3 +208,28 @@
   of communication strategy at fixed device count. Matrix is now 232 rows; the runner
   gained a `pp` column, includes pp in the boot key, and applies the D43 NCCL workaround
   whenever tp>1 **or** pp>1. tp=1/pp=1 server commands are unchanged, verified by dry-run
+- D45 (2026-08-01): **Why tensor parallelism helps, measured at step granularity - and the
+  KV-cache hypothesis is refuted.** The session C write-up first attributed the tp speedup
+  to "memory bandwidth plus doubled KV cache allowing larger batches". The step log rules
+  the second half out: at rate 8 `kv_usage` averages 2.1 % (tp=1), 0.8 % (tp=2), 0.3 %
+  (tp=4) and the running batch is essentially unchanged (25.7 / 24.5 / 23.6). KV capacity
+  was never the constraint. The entire effect is a shorter model-execution step at constant
+  batch size:
+    * decode-only steps (n_ctx_toks == 0): 32.2 -> 22.4 -> 18.1 ms, i.e. 1.44x and 1.78x
+    * steps carrying prefill (n_ctx_toks > 0): 73.3 -> 64.5 -> 58.2 ms, i.e. 1.14x and 1.26x
+  The two phases respond differently because decode is memory-bandwidth bound (each GPU
+  streams 1/N of the weights per step, so aggregate bandwidth converts directly into time)
+  while prefill is already compute-dense at ~300 context tokens per step and gains far less
+  relative to the added all-reduce.
+  Speedup also shrinks as the batch grows (decode-only, matched batch): 1.54x/2.07x at
+  batch 8-16, 1.35x/1.67x at 16-32, 1.28x/1.48x at 32-64 - at small batch nearly the whole
+  step is weight streaming, which sharding divides by N; at large batch the weights are
+  amortised over more tokens while the all-reduce volume grows with the batch.
+  Finally, step speedup only becomes throughput once the system saturates: at rate 1 the
+  tp=4 step is 2.5x faster yet throughput rises 4.6 %, because below saturation the arrival
+  rate sets throughput and a faster step only buys idle time. At rate 8 and inf the two
+  converge (+52 %, +55 %). Figure 11 carries all three panels
+- D46 (2026-08-01): Figure 11 added (`scripts/plots/fig11_step_parallelism.py`). It is the
+  only figure drawing on the step log's phase split, and it is where the assignment's
+  "time and resource usage during the prefill phase and the decode phase" requirement meets
+  the "parallel processing options" requirement. The smoke test now expects 11 figures

@@ -20,7 +20,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common  # noqa: E402
 import fig05_datasets  # noqa: E402
 import fig08_phases  # noqa: E402
-import fig09_resources  # noqa: E402
+import fig09_resources
+import fig11_step_parallelism  # noqa: E402
 import figs_sweep  # noqa: E402
 
 
@@ -33,7 +34,7 @@ def main():
                     help="restrict to specific results/raw/* dirs")
     args = ap.parse_args()
 
-    want = (set(range(1, 11)) if args.figures == "all"
+    want = (set(range(1, 12)) if args.figures == "all"
             else {int(x) for x in args.figures.split(",") if x.strip()})
 
     print("Loading runs ...")
@@ -46,6 +47,7 @@ def main():
     registry.update(figs_sweep.ALL)
     registry.update(fig08_phases.ALL)
     registry.update(fig09_resources.ALL)
+    registry.update(fig11_step_parallelism.ALL)
 
     made, skipped, failed = [], [], []
     for n in sorted(want):
