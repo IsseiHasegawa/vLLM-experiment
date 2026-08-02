@@ -120,11 +120,11 @@ We specified --ignore-eos for all runs, which pins the generation length to the 
 
 
 ### 3.3 Experiment matrix
-A total of 208 runs were performed. The matrix was generated using scripts/make_matrix.py. We chose to generate the matrix from code rather than using a hand-written CSV file so that additions or modifications to the conditions would be recorded as changes in the history, ensuring reproducibility. Each condition was repeated three times, with the seed changed to 1, 2, and 3 for each iteration (§3.4).
+A total of 208 runs were executed; 207 completed successfully and form the dataset used throughout this report. One run (G1 at rate 1, repetition 1) returned 199 of the 200 requested completions and was recorded as a failure. It was not re-run, so that single point rests on two repetitions rather than three. The matrix was generated using scripts/make_matrix.py. We chose to generate the matrix from code rather than using a hand-written CSV file so that additions or modifications to the conditions would be recorded as changes in the history, ensuring reproducibility. Each condition was repeated three times, with the seed changed to 1, 2, and 3 for each iteration (§3.4).
 
 The table below shows the main groups and the variables each group controls.
 
-| Group | Model | Dataset | GPUs | Varied | Runs |
+| Group | Model | Dataset | GPUs | Varied | Runs analysed |
 |:-------------|:------|:---------|:----------|:-------------------------|-----:|
 | S1 | 7B | ShareGPT | 1 | arrival rate | 24 |
 | S2 | 7B | random | 1 | arrival rate | 24 |
@@ -132,12 +132,12 @@ The table below shows the main groups and the variables each group controls.
 | P0 | 0.5B | ShareGPT | 1 | offline capacity probe | 1 |
 | S3 | 0.5B | ShareGPT | 1 | arrival rate | 27 |
 | I1 / I2 | 7B | random | 1 | input/output ratio | 3 / 3 |
-| G1 / G2 / G4 | 7B | ShareGPT | 1 / 2 / 4 | GPU count, tp | 24 each |
+| G1 / G2 / G4 | 7B | ShareGPT | 1 / 2 / 4 | GPU count, tp | 23 / 24 / 24 |
 | C2 / C2x | 7B | ShareGPT | 1 | concurrency, closed loop | 21 / 3 |
 | C1off | 7B | ShareGPT | 1 | instrumentation on/off | 3 |
 | A1a–A1d | 7B | ShareGPT | 1 | anchor across sessions | 12 |
 
-: Experiment groups. Total 208 runs.
+: Experiment groups. 208 runs executed, 207 analysed.
 
 The arrival rate grid was varied for each model. For 7B, it was {1, 2, 3, 4, 5, 6, 8, ∞} req/s, and for 0.5B, it was {1, 2, 4, 8, 12, 16, 24, 32, ∞} req/s. There is approximately a sixfold difference in capacity between the two models, and the 0.5B saturation point cannot be captured within the same grid. This conclusion is based on measurements, not speculation. Prior to the S3 sweep, a single probe run, P0, was executed under offline conditions (rate = ∞) to confirm that the 0.5B capacity falls within the expanded grid. Similarly, the original grid for S2 was too small for the capacity of the random workload and did not reach the saturation knee. Therefore, in S2b, we added {5, 10, 12, 16, 20} req/s and connected them to the S2 series with rate 5 as a duplicate point.
 
