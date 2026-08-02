@@ -1,14 +1,16 @@
-"""Figures 1-4, 6, 7: request-rate sweeps and their overlays.
+"""Figures 1-4, 6, 7, 10: request-rate sweeps, overlays and the closed loop.
 
   fig01  rate -> TTFT (p50, p95)                       S1
   fig02  rate -> TPOT and ITL (p50, p95)               S1
   fig03  rate -> throughput (requests/s, tokens/s)     S1
   fig04  rate -> TTFT p95 and throughput, ShareGPT vs random   S1 vs S2
   fig06  rate -> TTFT p95, TPOT p95 and throughput, 7B vs 0.5B S1 vs S3
-  fig07  rate -> throughput and TTFT p95, 1 GPU vs tp=2        S1 vs S4
+  fig07  rate -> TTFT p95, TPOT p95 and throughput, 1/2/4 GPUs G1/G2/G4 (+P1)
+  fig10  closed-loop latency vs throughput                     C2 (+C2x)
 
-Error bars are the standard deviation over the 3 repetitions of each point
-(seed is fixed, so they reflect system noise only; decision D6).
+Error bars are the standard deviation over the 3 repetitions of each point.
+Repetitions use seeds 1/2/3 (D14), so they include prompt sampling and arrival
+jitter, not system noise alone.
 """
 
 import matplotlib.pyplot as plt
