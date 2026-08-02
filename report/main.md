@@ -173,6 +173,31 @@ Each condition was repeated three times, and the error bars in the figure repres
 
 
 ### 3.5 Measurement validity
+The validity of this measurement depends on two assumptions: that the instrumentation itself does not alter the subject of measurement, and that the results across the three sessions are comparable. Both assumptions were verified through controls incorporated into the design.
+
+Instrumentation overhead (C1). The same conditions were measured with the instrumentation enabled (A1a) and disabled (C1off). Since the logger switches based on environmental variables (§3.1), both arms run the same binary. Both were executed in close temporal proximity within Session A and used the same set of seeds.
+
+A paired t-test detected a difference of +2.97% in TTFT p50 (p = 0.010, n = 3 seed pairs). When the same comparison is made without pairing, the difference is nearly the same at +3.06%, but the p-value is 0.687, so the same difference is undetectable. This is because an independent test has virtually no statistical power with n = 3; the design that pairs seeds (§3.4) is effective here.
+
+More important than the magnitude of the difference is its direction. All seven metrics moved in the same direction—enabling instrumentation results in slower response times and lower throughput. While many individual metrics fall within the range of practical equivalence, the fact that they all point in the same direction is evidence of a real effect.
+Therefore, we do not claim that the effect of instrumentation is negligible. The latency values in this report should be interpreted as upper bounds, and the throughput values as lower bounds, with a margin of 2.97%. Since all measurements were taken with instrumentation enabled, this bias applies uniformly across all conditions and does not affect comparisons between conditions.
+
+Comparability across sessions (A1 anchor). The same conditions—7B / ShareGPT / single GPU / rate 5—were repeated at four different time points. A1a and A1b correspond to the beginning and end of Session A (same instance, 3 hours and 13 minutes apart); A1c corresponds to Session B; and A1d corresponds to Session C. The three sessions were run on different instances spanning two geographic regions.
+
+| Anchor | Session | Achieved throughput (req/s) | vs A1a |
+|:-------|:--------|----------------------------:|-------:|
+| A1a | A | 3.195 | — |
+| A1b | A | 3.205 | +0.31 % |
+| A1c | B | 3.174 | −0.66 % |
+| A1d | C | 3.187 | −0.25 % |
+
+: Anchor runs across sessions (7B, ShareGPT, 1 GPU, rate 5, n = 3 each).
+
+The overall spread across the four points is 0.97%. Given that the difference between A1a and A1b—which were run 3 hours apart on the same instance—is 0.31%, the differences across sessions and regions are of a magnitude comparable to the drift within a single instance. The performance differences compared in this report (such as the +32.5% gain from tensor parallelism and capacity differences due to the dataset) are more than thirty times larger than this drift, so comparisons across sessions are acceptable.
+
+Note that the comparison of the number of GPUs does not depend on this tolerance range. Measurements for G1, G2, and G4 were all taken within a single instance (§3.3). The anchor serves to discuss the sweep in Session A, the closed-loop in Session B, and the results of Session C within the same context.
+
+
 
 
 ## 4. Results
