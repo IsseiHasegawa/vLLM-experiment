@@ -92,14 +92,14 @@ For this measurement, we selected two datasets with contrasting characteristics.
 
 ShareGPT used ShareGPT_V3_unfiltered_cleaned_split.json (672,837,942 bytes; first 16 digits of SHA-256 hash: 35f0e213ce091ed9). Distribution statistics were calculated using the Qwen2.5-7B-Instruct tokenizer, with 5,000 samples extracted using seed 42. The random workload used a default of 256 input and 128 output tokens, with range_ratio set to 0 to eliminate length variability. In groups I1 and I2, which isolate the effects of the input-to-output ratio, this fixed length was changed to 512/128 and 128/512, respectively.
 
-The nominal distribution does not match the observed distribution. The ShareGPT sampler in the benchmark harness does not accept prompts exceeding approximately 1,024 tokens. While the maximum input length of the source files was 66,076 tokens, the maximum length actually processed was 1,010 tokens. The summaries of both are shown side by side.
+The nominal and realised distributions differ substantially. The harness sampler admits a conversation only if its prompt and output are each at least 4 tokens, the prompt is at most 1,024 tokens, and prompt and output together are at most 2,048 (is_valid_sequence in vllm/benchmarks/datasets/datasets.py). The source file reaches 66,076 tokens, but the realised maximum is 1,010 — a consequence of this filter, not of the data. The summaries of both are shown side by side.
 
 ![](../figures/fig05_dataset_distributions.png)
 
 **Figure 2.** Cumulative distribution of prompt lengths for ShareGPT and random
 (log x-axis). Solid lines are realised values taken from the phase logs; dashed
 lines are nominal values from the source file. The divergence of the two ShareGPT
-curves near 1,024 tokens is caused by the benchmark harness sampler, which does
+curves at 1,024 tokens is caused by the benchmark harness sampler, which does
 not admit longer prompts. The random workload is fixed-length and therefore steps.
 
 | Dataset | Source | Input p50 | p95 | max |
@@ -115,8 +115,6 @@ Showing only the nominal distribution would result in an overestimation of the a
 Caution is also required regarding output length. ShareGPT's realised output lengths have a p95/p50 ratio of 5.8 with a maximum of 1,642 tokens (S1, n = 4,800), i.e. a heavy tail. Under offline conditions (rate = inf), a run ends when its longest request completes, so S1's achieved throughput at rate = inf varies by 41 % across seeds (3.23 / 4.57 / 3.56 req/s). For this reason, we do not derive ShareGPT's capacity from rate = inf; instead, dataset comparisons are made at matched rates or from the closed-loop group C2.
 
 We specified --ignore-eos for all runs, which pins the generation length to the requested value. This ensures that the output length is no longer influenced by the model’s decision to stop, thereby standardizing the workload across conditions. With prefix caching disabled (§3.3), no KV state is shared between requests even when prompts repeat across repetitions, so the repetitions remain independent. We verified n_cached = 0 for all 39,480 request records.
-
-<!-- TODO: confirm exact filter -->
 
 
 ### 3.3 Experiment matrix
