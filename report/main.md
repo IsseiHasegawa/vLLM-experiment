@@ -159,7 +159,7 @@ As a general rule, latency distributions are reported using p50 and p95 rather t
 
 Since there are two possible definitions of achieved throughput, this report presents both.
 
-The first definition is the request_throughput reported by the harness, i.e., the number of completions divided by the measurement time. Since the measurement time includes the period until the last request is completed, the drain after arrivals have stopped is added to the denominator. In S1, this drain lasted approximately 12 seconds at Rate 1 and 32 seconds at Rate 8. As a result, the achieved rates appear lower at all points, including those where the server is keeping up comfortably. The measured value for the nominal Rate 1 was 0.95 req/s.
+The first definition is the request_throughput reported by the harness, i.e., the number of completions divided by the measurement time. Since the measurement time includes the period until the last request is completed, the drain after arrivals have stopped is added to the denominator. In S1, this drain lasted approximately 12 seconds at rate 1 and 32 seconds at rate 8. As a result, the achieved rates appear lower at all points, including those where the server is keeping up comfortably. The measured value for the nominal Rate 1 was 0.95 req/s.
 
 The second definition is the number of completions by the time of the last arrival divided by the arrival span. While this eliminates the impact of drain, it introduces a reverse bias—requests that were still being processed when arrivals ceased are not counted—and the magnitude of this bias increases with load.
 
@@ -173,7 +173,7 @@ Each condition was repeated three times, and the error bars in the figure repres
 ### 3.5 Measurement validity
 The validity of this measurement depends on two assumptions: that the instrumentation itself does not alter the subject of measurement, and that the results across the three sessions are comparable. Both assumptions were verified through controls incorporated into the design.
 
-Instrumentation overhead (C1). The same conditions were measured with the instrumentation enabled (A1a) and disabled (C1off). Since the logger switches based on environmental variables (§3.1), both arms run the same binary. Both were executed in close temporal proximity within Session A and used the same set of seeds.
+Instrumentation overhead (C1). The same conditions were measured with the instrumentation enabled (A1a) and disabled (C1off). Since the logger switches based on an environmental variables (§3.1), both arms run the same binary. Both were executed in close temporal proximity within Session A and used the same set of seeds.
 
 A paired t-test detected a difference of +2.97% in TTFT p50 (p = 0.010, n = 3 seed pairs). When the same comparison is made without pairing, the difference is nearly the same at +3.06%, but the p-value is 0.687, so the same difference is undetectable. This is because an independent test has virtually no statistical power with n = 3; the design that pairs seeds (§3.4) is effective here.
 
