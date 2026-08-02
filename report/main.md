@@ -120,7 +120,36 @@ We specified --ignore-eos for all runs, which pins the generation length to the 
 
 
 ### 3.3 Experiment matrix
+A total of 208 runs were performed. The matrix was generated using scripts/make_matrix.py. We chose to generate the matrix from code rather than using a hand-written CSV file so that additions or modifications to the conditions would be recorded as changes in the history, ensuring reproducibility. Each condition was repeated three times, with the seed changed to 1, 2, and 3 for each iteration (§3.4).
 
+The table below shows the main groups and the variables each group controls.
+
+| Group | Model | Dataset | GPUs | Varied | Runs |
+|:-------------|:------|:---------|:----------|:-------------------------|-----:|
+| S1 | 7B | ShareGPT | 1 | arrival rate | 24 |
+| S2 | 7B | random | 1 | arrival rate | 24 |
+| S2b | 7B | random | 1 | arrival rate, extended | 15 |
+| P0 | 0.5B | ShareGPT | 1 | offline capacity probe | 1 |
+| S3 | 0.5B | ShareGPT | 1 | arrival rate | 27 |
+| I1 / I2 | 7B | random | 1 | input/output ratio | 3 / 3 |
+| G1 / G2 / G4 | 7B | ShareGPT | 1 / 2 / 4 | GPU count, tp | 24 each |
+| C2 / C2x | 7B | ShareGPT | 1 | concurrency, closed loop | 21 / 3 |
+| C1off | 7B | ShareGPT | 1 | instrumentation on/off | 3 |
+| A1a–A1d | 7B | ShareGPT | 1 | anchor across sessions | 12 |
+
+: Experiment groups. Total 208 runs.
+
+The arrival rate grid was varied for each model. For 7B, it was {1, 2, 3, 4, 5, 6, 8, ∞} req/s, and for 0.5B, it was {1, 2, 4, 8, 12, 16, 24, 32, ∞} req/s. There is approximately a sixfold difference in capacity between the two models, and the 0.5B saturation point cannot be captured within the same grid. This conclusion is based on measurements, not speculation. Prior to the S3 sweep, a single probe run, P0, was executed under offline conditions (rate = ∞) to confirm that the 0.5B capacity falls within the expanded grid. Similarly, the original grid for S2 was too small for the capacity of the random workload and did not reach the saturation knee. Therefore, in S2b, we added {5, 10, 12, 16, 20} req/s and connected them to the S2 series with rate 5 as a duplicate point.
+
+Each open-loop run submitted 200 requests. Only C2 in the closed-loop experiments varied the number of prompts according to the concurrency level: 60 prompts at concurrency 1 and 2, 120 at 4 and 8, and 200 at 16 and above. At concurrency 1 requests are served one at a time, so even the reduced count of 60 still took 20.5 minutes per run; keeping it at 200 would not have been practical. This represents a trade-off between accuracy per point and total elapsed time.
+
+The following settings are common to all runs to ensure comparability between conditions. The --num-warmups 30 option ensures that measurements are taken only after the server has reached a steady state. --temperature 0 disables sampling based on the server’s default generation settings, making the runs reproducible. --ignore-eos pins the generation length to the requested value (§3.2). --no-enable-prefix-caching preserves independence between iterations (§3.2). The recorded percentiles were 50, 95, and 99.
+
+Comparisons of the number of GPUs were performed within a single instance. G1, G2, and G4 were all measured on the same 4-GPU machine; the only difference between the series was the parallelization settings. If measurements with different tp values were taken on separate instances, it would be impossible to separate the effects of host differences from those of parallelization. For the same reason, although tp=1 was also measured in Session A, it was remeasured as G1.
+
+The measurements are divided into three sessions. Session A (1×A40, 91 runs) covers single-GPU sweeping and the I/O ratio; Session B (1×A40, 39 runs) covers closed-loop and S2b; and Session C (4×A40, 78 runs) covers the number of GPUs and parallelization. The validity of cross-session comparisons is discussed in §3.5. The hardware used was the NVIDIA A40 48GB, and the driver was standardized to the 580 series (CUDA 13.0).
+
+The pipeline-parallel group P1 (pp=2, 24 runs) is defined in the matrix but is not included in the measurement scope of this report.
 
 
 ### 3.4 Metrics
