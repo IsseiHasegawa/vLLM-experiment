@@ -49,6 +49,67 @@ EQUIV_PCT = 2.0
 HIGHER_IS_BETTER = {"request_throughput", "output_throughput"}
 
 
+def _betacf(a, b, x, itmax=200, eps=3e-14):
+    """Continued fraction for the incomplete beta function (Lentz's method)."""
+    qab, qap, qam = a + b, a + 1.0, a - 1.0
+    c, d = 1.0, 1.0 - qab * x / qap
+    if abs(d) < 1e-300:
+        d = 1e-300
+    d = 1.0 / d
+    h = d
+    for m in range(1, itmax + 1):
+        m2 = 2 * m
+        aa = m * (b - m) * x / ((qam + m2) * (a + m2))
+        d = 1.0 + aa * d
+        c = 1.0 + aa / c
+        if abs(d) < 1e-300:
+            d = 1e-300
+        if abs(c) < 1e-300:
+            c = 1e-300
+        d = 1.0 / d
+        h *= d * c
+        aa = -(a + m) * (qab + m) * x / ((a + m2) * (qap + m2))
+        d = 1.0 + aa * d
+        c = 1.0 + aa / c
+        if abs(d) < 1e-300:
+            d = 1e-300
+        if abs(c) < 1e-300:
+            c = 1e-300
+        d = 1.0 / d
+        h *= d * c
+        if abs(d * c - 1.0) < eps:
+            break
+    return h
+
+
+def _betai(a, b, x):
+    """Regularised incomplete beta function I_x(a, b)."""
+    if x <= 0.0:
+        return 0.0
+    if x >= 1.0:
+        return 1.0
+    lbeta = (math.lgamma(a + b) - math.lgamma(a) - math.lgamma(b)
+             + a * math.log(x) + b * math.log(1.0 - x))
+    if x < (a + 1.0) / (a + b + 2.0):
+        return math.exp(lbeta) * _betacf(a, b, x) / a
+    return 1.0 - math.exp(lbeta) * _betacf(b, a, 1.0 - x) / b
+
+
+def t_sf2(t, df):
+    """Two-sided p-value for Student's t with `df` degrees of freedom.
+
+    Not the normal approximation. The first version of this script used
+    erfc(|t|/sqrt(2)), which is the z-test: with three seed pairs there are two
+    degrees of freedom and the t distribution has far heavier tails, so that
+    approximation understated every p-value by a factor of 4 to 12. It reported
+    p=0.010 for the TTFT p50 difference where the correct value is 0.125, and
+    turned "no metric reaches significance at n=3" into a claimed detection.
+    """
+    if df <= 0 or t != t:
+        return float("nan")
+    return _betai(0.5 * df, 0.5, df / (df + t * t))
+
+
 def paired(a, b):
     """Paired t statistic and two-sided p on the per-seed differences.
 
@@ -64,22 +125,22 @@ def paired(a, b):
     if sd == 0:
         return 0.0, 1.0
     t = st.mean(d) / (sd / math.sqrt(len(d)))
-    return t, math.erfc(abs(t) / math.sqrt(2))
+    return t, t_sf2(t, len(d) - 1)
 
 
 def welch(a, b):
-    """Welch's t statistic and two-sided p, via a normal approximation."""
+    """Welch's t statistic and two-sided p, with Welch-Satterthwaite df."""
     if len(a) < 2 or len(b) < 2:
         return float("nan"), float("nan")
     va, vb = st.variance(a), st.variance(b)
-    se = math.sqrt(va / len(a) + vb / len(b))
-    if se == 0:
+    na, nb = len(a), len(b)
+    se2 = va / na + vb / nb
+    if se2 == 0:
         return 0.0, 1.0
-    t = (st.mean(a) - st.mean(b)) / se
-    # Normal approximation to the two-sided p-value (df is small, so this is
-    # anti-conservative; reported only as a rough guide alongside effect size).
-    p = math.erfc(abs(t) / math.sqrt(2))
-    return t, p
+    t = (st.mean(a) - st.mean(b)) / math.sqrt(se2)
+    denom = (va / na) ** 2 / (na - 1) + (vb / nb) ** 2 / (nb - 1)
+    df = se2 ** 2 / denom if denom > 0 else 1.0
+    return t, t_sf2(t, df)
 
 
 def main():
@@ -179,8 +240,15 @@ def main():
         pos = sum(1 for s in signs if s > 0)
         emit(f"direction agreement: {max(pos, len(signs) - pos)}/{len(signs)} "
              "metrics move in the same direction (logging slower / lower "
-             "throughput). A consistent direction is evidence of a real "
-             "effect even where each metric alone is inside the bound.")
+             "throughput).")
+        emit("  This is weaker evidence than the count suggests: the seven "
+             "metrics are not independent. Run duration is 200 / request "
+             "throughput, output throughput is request throughput times a "
+             "seed-fixed output length, and the p50/p95 pairs describe the "
+             "same distribution. There are about three distinct quantities "
+             "here (TTFT, TPOT, throughput), and they are themselves linked "
+             "because slower steps lower throughput. The consistent sign is "
+             "worth reporting, but it is not a significance test.")
 
     emit()
     # The paired test is the sharper one and is preferred when the arms pair

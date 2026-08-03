@@ -4,31 +4,31 @@ C1 control - instrumentation overhead
 
 metric                    logging on   logging off       delta       t       p
 ------------------------------------------------------------------------------
-TTFT p50                 100.33±9.94    97.35±8.10       3.06%    0.40   0.687
-TTFT p95                 205.34±9.40   201.86±13.23       1.73%    0.37   0.710
-TPOT p50                  38.92±1.85    38.65±1.57       0.70%    0.19   0.847
-TPOT p95                  46.63±0.90    46.15±1.25       1.03%    0.54   0.591
-Request throughput         3.19±0.18     3.20±0.18      -0.27%   -0.06   0.953
-Output throughput        611.37±28.05   613.02±29.41      -0.27%   -0.07   0.944
-Run duration              62.73±3.48    62.57±3.56       0.26%    0.06   0.955
+TTFT p50                 100.33±9.94    97.35±8.10       3.06%    0.40   0.708
+TTFT p95                 205.34±9.40   201.86±13.23       1.73%    0.37   0.731
+TPOT p50                  38.92±1.85    38.65±1.57       0.70%    0.19   0.856
+TPOT p95                  46.63±0.90    46.15±1.25       1.03%    0.54   0.622
+Request throughput         3.19±0.18     3.20±0.18      -0.27%   -0.06   0.956
+Output throughput        611.37±28.05   613.02±29.41      -0.27%   -0.07   0.948
+Run duration              62.73±3.48    62.57±3.56       0.26%    0.06   0.958
 
 largest unpaired difference: +3.06% (practical-equivalence bound ±2.0%)
 
 metric (paired by seed)   mean delta        per-seed range       t       p
 --------------------------------------------------------------------------
-TTFT p50                       2.97%      +1.05% .. +4.86%    2.56   0.010
-TTFT p95                       1.81%      -0.29% .. +3.76%    1.54   0.123
-TPOT p50                       0.68%      +0.09% .. +1.52%    1.56   0.120
-TPOT p95                       1.05%      +0.48% .. +1.99%    2.28   0.023
-Request throughput            -0.26%      -0.51% .. -0.10%   -1.98   0.048
-Output throughput             -0.26%      -0.51% .. -0.10%   -2.00   0.045
-Run duration                   0.26%      +0.10% .. +0.51%    2.22   0.026
+TTFT p50                       2.97%      +1.05% .. +4.86%    2.56   0.125
+TTFT p95                       1.81%      -0.29% .. +3.76%    1.54   0.263
+TPOT p50                       0.68%      +0.09% .. +1.52%    1.56   0.260
+TPOT p95                       1.05%      +0.48% .. +1.99%    2.28   0.150
+Request throughput            -0.26%      -0.51% .. -0.10%   -1.98   0.186
+Output throughput             -0.26%      -0.51% .. -0.10%   -2.00   0.183
+Run duration                   0.26%      +0.10% .. +0.51%    2.22   0.157
 
 largest paired difference:   +2.97%  (n=3 seed pairs)
-direction agreement: 7/7 metrics move in the same direction (logging slower / lower throughput). A consistent direction is evidence of a real effect even where each metric alone is inside the bound.
+direction agreement: 7/7 metrics move in the same direction (logging slower / lower throughput).
+  This is weaker evidence than the count suggests: the seven metrics are not independent. Run duration is 200 / request throughput, output throughput is request throughput times a seed-fixed output length, and the p50/p95 pairs describe the same distribution. There are about three distinct quantities here (TTFT, TPOT, throughput), and they are themselves linked because slower steps lower throughput. The consistent sign is worth reporting, but it is not a significance test.
 
-VERDICT: instrumentation effect detected (paired) on TTFT p50 (+2.97%, p=0.010)
-  -> report the effect; treat instrumented latencies as an upper bound and instrumented throughput as a lower bound.
+VERDICT: no instrumentation effect above ±2.0% (paired test).
   Bound for the report: every metric within 2.97% (paired, n=3).
   With n=3 the unpaired p-values have almost no power; the paired bound is the claim this control supports.
 

@@ -118,15 +118,17 @@
   emptied the phase-log slice for exactly the runs figure 8 is built from. Manifest rows
   are now keyed by (run_id, campaign directory) taken from `result_json`, and a shadowed
   run_id prints a NOTE
-- D31 (2026-07-29): **C1 is analysed paired by seed, and it detects an effect.** The arms
-  share seeds (D14), so the paired difference isolates logging: TTFT p50 +2.97 %
-  (p=0.010), TPOT p95 +1.05 %, request throughput -0.26 %, and 7/7 metrics move in the
-  same direction. The unpaired Welch test on n=3 has almost no power (all p>0.5) and is
-  retained for completeness only. Reported claim: logging costs <=3 % on latency and
-  <=0.3 % on throughput, so instrumented latencies are upper bounds and instrumented
-  throughput a lower bound. This revises the session-A quality gate in PLAN 6.4, which
-  required the string "no instrumentation effect detected": a small, bounded, correctly
-  signed effect is the expected outcome, not a failure
+- D31 (2026-07-29, corrected 2026-08-03): **C1 is analysed paired by seed.** The arms
+  share seeds (D14), so the paired difference isolates logging: TTFT p50 +2.97 %,
+  TPOT p95 +1.05 %, request throughput -0.26 %, and all seven metrics move in the same
+  direction. Reported claim: logging costs <=3 % on latency and <=0.3 % on throughput, so
+  instrumented latencies are upper bounds and instrumented throughput a lower bound.
+  This revises the session-A quality gate in PLAN 6.4, which required the string "no
+  instrumentation effect detected": a small, bounded, correctly signed effect is the
+  expected outcome, not a failure.
+  **The original entry claimed a detection at p=0.010; that was wrong** - see D60. With
+  three seed pairs no metric reaches significance (smallest two-sided p is 0.125). The
+  claim this control supports is the *bound*, not a detected effect
 - D32 (2026-07-29): **S2b** adds rates {5,10,12,16,20} for 7B/random in session B, since
   S2's grid stopped at ~50 % utilisation (D13). r=5 overlaps session A's S2_r5 so the two
   instances can be cross-checked; the group is named separately because it is a different
@@ -388,3 +390,28 @@
   per-request records for every group and step records for every group with pp=1, which
   also mirrors the real constraint that pipeline parallelism produces no step log (D57).
   Figure 12 skips with a message instead of raising when a group has no phase records
+- D60 (2026-08-03): **The paired p-values were computed with a normal approximation and
+  were wrong.** `analyze_c1.py` used `erfc(|t|/sqrt(2))`, i.e. the z-test. With three seed
+  pairs there are two degrees of freedom, where the t distribution has far heavier tails,
+  so every p-value was understated by a factor of 4 to 12:
+
+  | metric | t | reported | correct (t, df=2) |
+  |---|---|---|---|
+  | TTFT p50 | 2.56 | 0.010 | **0.125** |
+  | TPOT p95 | 2.28 | 0.023 | **0.150** |
+  | Request throughput | -1.98 | 0.048 | **0.186** |
+
+  Corrected, **no metric reaches p<0.05** and the verdict flips from "instrumentation
+  effect detected on TTFT p50" to "no effect above the +-2 % practical bound". D31 and D45
+  both quoted the 0.010 figure and are amended. The script now computes the two-sided
+  p-value from Student's t via the regularised incomplete beta (verified against the
+  textbook critical value t=4.303 at df=2 -> p=0.050), and Welch's test uses
+  Welch-Satterthwaite degrees of freedom instead of the same approximation.
+  The "7/7 metrics agree in direction" line was also overstated and is now qualified in
+  the output: run duration is 200 / request throughput, output throughput is request
+  throughput times a seed-fixed output length, and the p50/p95 pairs describe one
+  distribution, so there are roughly three distinct quantities, not seven independent
+  ones. The consistent sign is worth reporting; it is not a significance test.
+  What the control supports is unchanged and is what Methods should state: **logging costs
+  at most ~3 % on latency and ~0.3 % on throughput**, reported as a bound rather than a
+  detection, because at n=3 the test has almost no power
