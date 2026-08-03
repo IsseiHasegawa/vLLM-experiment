@@ -1,0 +1,13 @@
+Session D: P1 (pipeline parallelism, pp=2), 24 runs, 2026-08-02/03
+
+Host: 4x A40, driver 580.159.04, GPU0-GPU1 PXB on NUMA 0 - the same pair and the same interconnect class session C used for G2 (tp=2). An earlier 4-GPU host offered GPU0-GPU1 as PIX with all four GPUs on one NUMA node, which would have changed the interconnect at the same time as the parallelism strategy, and was discarded.
+
+Three deviations from sessions A-C, recorded because they cannot be reconstructed afterwards:
+
+1. No step-level records. vLLM pipeline-parallel executor requires the batch-queue step path, so the instrumented step function is never called and steps-*.jsonl is not written at all. The server log says so explicitly. The runner guard (D9) aborted the first attempt on this; it was relaxed for pp>1 only. Per-request records are complete: 5570 = 50 warm-up + 24 x 230.
+
+2. Resource log truncated. The 1 Hz logger died at 01:08 UTC with OSError errno 5 writing to the network volume; runs after that point have no GPU/CPU samples.
+
+3. Fixed cost per run was unstable. Most runs took 275-450 s, several took 791-1344 s. The inflation is in process start-up, not in the measured window: achieved rates within a rate group stayed consistent (r4: 2.78 / 2.72 / 3.02) and the measurement window is bounded by the request log (D28).
+
+ABORTED_batchqueue_guard_*.log is the server log from the first attempt, kept as primary evidence for point 1. No benchmark ran during that attempt.

@@ -335,9 +335,10 @@ def main():
             time.sleep(2)
             server_log.flush()
             if instr == "on" and "PHASE-INSTR: batch-queue" in open(slog_path).read():
-                raise SystemExit(
-                    "FATAL: batch-queue path active; step instrumentation "
-                    "would be silent. Check --no-async-scheduling.")
+                if int(pp) > 1:
+                    print("[runner] NOTE pp>1: batch-queue step path active; steps-*.jsonl will be empty. Per-request records are unaffected.")
+                else:
+                    raise SystemExit("FATAL: batch-queue path active; step instrumentation would be silent. Check --no-async-scheduling.")
 
             if not args.no_boot_warmup:
                 wname = f"BOOT{bi}_{model.split('/')[-1]}_tp{tp}"
