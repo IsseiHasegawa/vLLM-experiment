@@ -59,6 +59,7 @@ def build(tmp: Path, pilot: bool):
                  "cpu_server_pct", "cpu_client_pct", "gpu0_util",
                  "gpu0_memutil", "gpu0_mem_mib", "gpu0_power_w"])
     req = open(base / "phase_logs" / "requests-1.jsonl", "w")
+    stp = open(base / "phase_logs" / "steps-1.jsonl", "w")
     req.write(json.dumps({"record": "meta", "kind": "requests"}) + "\n")
     seq = 0
 
@@ -116,7 +117,11 @@ def build(tmp: Path, pilot: bool):
                          int(30 + 65 * load), int(45 + 50 * load),
                          int(15000 + 20000 * load), int(90 + 180 * load)])
 
-        if r["group"] in ("I1", "I2"):
+        # Phase records for every group, not just I1/I2: figures 11 and 12
+        # read them for G1/G2/G4/P1, and without them those figures rendered
+        # empty panels while still counting as "made" - the failure mode D37
+        # was written to stop.
+        if True:
             for i in range(200):
                 seq += 1
                 pre = (inlen / 512) * 0.09 * (1 + load)
@@ -131,9 +136,28 @@ def build(tmp: Path, pilot: bool):
                     "mean_tpot_s": dec / max(outlen - 1, 1),
                     "finish": "length"}) + "\n")
 
+        # Step records for everything except pp>1, which mirrors the real
+        # constraint: vLLM's pipeline-parallel executor never calls the
+        # instrumented step function (D57).
+        if int(r.get("pp", "1") or 1) == 1:
+            n_steps = max(int(dur * 4), 4)
+            for k in range(n_steps):
+                is_prefill = k % 9 == 0
+                stp.write(json.dumps({
+                    "ts": t0 + dur * k / n_steps, "seq": k, "pid": 1,
+                    "sched_s": 0.0006, "exec_s": (0.070 if is_prefill
+                                                  else 0.032 / int(r["tp"])),
+                    "n_ctx_reqs": 3 if is_prefill else 0,
+                    "n_ctx_toks": 300 if is_prefill else 0,
+                    "n_gen_reqs": int(6 + 26 * load),
+                    "n_gen_toks": int(6 + 26 * load),
+                    "n_running": int(6 + 26 * load), "n_waiting": 0,
+                    "kv_usage": 0.02 * load}) + "\n")
+
     man.close()
     res.close()
     req.close()
+    stp.close()
 
     # figure 5 input
     stats = {

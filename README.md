@@ -353,3 +353,38 @@
   measured speed-up of one - and now prints "baseline". The right panel's legend has five
   entries spanning two y-axes and sat over the middle of the plot, which is exactly where
   the step-time and throughput-gain curves cross; it moves below the axes
+- D57 (2026-08-03): **Session D: pipeline parallelism (P1, pp=2), 24 runs.** Instance
+  chosen so GPU0-GPU1 is PXB on one NUMA node, the same interconnect class session C used
+  for G2; a first 4-GPU host offering PIX was discarded because it would have changed the
+  interconnect and the parallelism strategy at once. Records complete: 5570 = 50 warm-up
+  + 24 x 230, n_cached all zero, 24/24 runs at 200 completed.
+  Two operational findings. First, **vLLM's pipeline-parallel executor requires the
+  batch-queue step path**, so the instrumented step function is never called and
+  steps-*.jsonl is not written at all; the D9 guard aborted the first attempt on this and
+  was relaxed for pp>1 only. Per-request records are unaffected, which is what this
+  analysis needs. Second, on the same host where **tensor parallelism hung in NCCL
+  communicator setup until P2P was disabled (D43), pipeline parallelism came up**: PP
+  exchanges activations with point-to-point send/recv rather than all-reduce, and the
+  server log shows NCCL creating an unbatched P2P communicator. The communication pattern
+  decided not just performance but whether the configuration started at all
+- D58 (2026-08-03): **The two parallelism strategies act on different phases, and figure
+  12 shows it.** At rate 5, against tp=1: tp=2 cuts prefill 13 % and decode 28.5 %; pp=2
+  cuts prefill 10.5 % and decode 1.7 %. The pattern holds across the whole rate grid
+  (pp=2 decode: -1 % to -5 %; tp=2 decode: -27 % to -40 %).
+  Mechanism: a decode step emits one token per request, and under PP that token crosses
+  stage 0 then stage 1 in sequence, so there is no parallelism within a step. TP splits
+  every layer, so both GPUs work on the same token and aggregate memory bandwidth - what
+  decode is bound by (D45) - doubles. Prefill processes hundreds of tokens at once, so
+  pipeline stages have work to overlap and PP does help there.
+  Consequences, all measured: decode is ~98 % of a request (D53), so only TP moves
+  throughput (pp=2 is within 0.6 % of tp=1 up to rate 4). TTFT is prefill plus queueing,
+  so PP does move it: -9 % to -12 % on the finite grid. Under burst arrival the effect is
+  much larger - at rate inf the mean queueing delay falls from 2809 ms (tp=1) to 1270 ms
+  (pp=2), a 55 % reduction, and TTFT p95 from 6940 ms to 3884 ms. The earlier one-line
+  summary "pp=2 does not help" was wrong: it looked only at achieved req/s
+- D59 (2026-08-03): The synthetic campaign only ever wrote phase records for I1 and I2, so
+  figure 11 rendered an empty panel while still counting as "made" - the exact failure D37
+  was written to stop, surviving in a corner the D37 fix did not reach. It now writes
+  per-request records for every group and step records for every group with pp=1, which
+  also mirrors the real constraint that pipeline parallelism produces no step log (D57).
+  Figure 12 skips with a message instead of raising when a group has no phase records
