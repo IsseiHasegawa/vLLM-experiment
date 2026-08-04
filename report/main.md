@@ -79,6 +79,14 @@ The core of this design lies in dividing the instrumentation into two axes. In v
 
 : Schema of the three instrumentation layers.
 
+![](figures/fig00_instrumentation.pdf)
+
+**Figure 1.** The three instrumentation layers. The benchmark client controls the
+arrival rate; the instrumented fork writes one log on the request axis and one on
+the step axis; an external process samples GPU counters and per-process CPU at 1 Hz.
+The dashed arrow marks observation from outside the server process, so the resource
+layer is independent of the code under measurement.
+
 The definitions of each time period were adopted directly from the vLLM’s internal definitions. queued_s covers the period from the QUEUED event to the first SCHEDULED event; prefill_s covers the period from the first SCHEDULED event to the first token (including chunk segmentation and any waiting time in between); decode_s covers the period from the first token to the last token; and e2e_s covers the period from arrival at the front end to completion. Since the frontend and engine core are separate processes, the output destinations are also separated by process.
 
 The logger is enabled only when the environment variable VLLM_PHASE_LOG_DIR is set; if it is not set, the function immediately returns at the beginning of the hook. Because instrumentation can be disabled without changing the binary, this enables the C1 control experiment described later (§3.5). Writing is performed via a buffer, and a background flush is scheduled every second to ensure that the last record is not lost in the event of a server crash.
