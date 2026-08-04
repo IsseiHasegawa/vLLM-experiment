@@ -222,16 +222,43 @@ it belongs in section 5. Check this before committing the section. -->
 
 ![](../figures/fig01_ttft_vs_rate.png)
 
-**Figure 3.** <!-- TODO: caption. Note that the offline (inf) point is detached and is
-not a continuation of the finite-rate series. -->
+**Figure 3.** Time to first token against arrival rate (Qwen2.5-7B, ShareGPT, one
+GPU). Error bars are the standard deviation over the three repetitions of each
+point; because repetitions use seeds 1/2/3, they carry prompt-sampling and
+arrival jitter as well as system noise. The y-axis is logarithmic. The offline
+point (rate = ∞) sits to the right of the dotted rule and is not a continuation
+of the finite-rate series: it is a burst transient in which all 200 requests are
+submitted at once, two orders of magnitude above the finite-rate values (§4.1).
 
 ![](../figures/fig02_decode_latency_vs_rate.png)
 
-**Figure 4.** <!-- TODO: caption. -->
+**Figure 4.** Decode-side latency against arrival rate (same runs as Figure 3),
+on a logarithmic y-axis. Left: time per output token, which is the mean over a
+request's whole generation. Right: inter-token latency, which resolves the
+individual gaps between tokens. The p50 of the two panels tracks closely while
+the p95 diverges, so the tail is a property of individual token gaps rather than
+of whole requests.
 
 ![](../figures/fig03_throughput_vs_rate.png)
 
-**Figure 5.** <!-- TODO: caption. Both throughput definitions from 3.4 appear here. -->
+**Figure 5.** Throughput against arrival rate (same runs as Figure 3), on linear
+axes. Left: both definitions of achieved request throughput given in §3.4 —
+completions over the measured duration, which the drain biases low, and
+completions over the arrival window, which excludes requests still in flight and
+biases high — against the dotted line where achieved equals requested. Neither
+curve is unbiased, and the gap between them is the reason saturation is argued
+from latency and from the closed loop instead. Right: output and total token
+throughput, the latter counting prompt tokens as well.
+
+Within the finite-rate range, the client is able to send requests at the specified rate. The actual arrival rate, measured from the arrival timestamps, ranges from 1.00 to 8.03 req/s for requested rates of 1 to 8 req/s, confirming that the load was applied correctly.
+
+**Latency.** TTFT increases monotonically with the arrival rate, but the rate of increase is gradual. The p50 increases from 76 ms to 124 ms, and the p95 from 151 ms to 245 ms — an increase of only about 1.6 times as the rate is multiplied by 8 (Figure 3). The same pattern is observed on the decoding side, where TPOT p50 ranges from 33.0 ms to 44.2 ms, and p95 from 34.8 ms to 57.8 ms (Figure 4). On the other hand, only the p95 of inter-token latency (ITL) increases 2.8-fold, from 34.3 ms to 95.0 ms, in contrast to the p50, which remains virtually unchanged at 32.4 ms to 35.6 ms. Median tokens arrive stably even under high load, while only a small number of tokens experience significant delays.
+
+**Queuing.** The queue dwell time recorded by the instrumentation averaged between 0.018 and 0.021 ms at every finite rate, with a maximum of 0.08 ms — three to four orders of magnitude below TTFT. This does not mean that queues do not exist; rather, it is because vLLM immediately accepts incoming requests into the currently executing batch. Load is reflected in batch size rather than queue length. The average number of requests included in steps that perform only decoding increases from 6.0 at rate 1 to 18.8 at rate 4 and 23.0 at rate 8, with the maximum expanding from 14 to 76. Backlog accumulates within batches rather than in the queue.
+
+**Throughput.** Achieved throughput does not reach a clear plateau within the finite grid: by the client's definition it still rises 5.0 % from rate 6 to rate 8, ending at 3.54 req/s (Figure 5, left). This value also depends on the definition used. The client-reported "completed / measured duration" includes the time until the last request completes in its denominator, so even at rate 1 it falls below 1 at 0.95 req/s. Excluding the drain, "completed / arrival window" reaches 5.2 req/s at rate 8. Neither metric is unbiased (§3.4), so the saturation point cannot be determined from this curve alone. Output token throughput increases from 181 to 675 tok/s, with the per-step gain falling to 5 % above rate 5 (Figure 5, right). The ceiling is better read from the closed-loop measurement, where output throughput tops out at 711 tok/s at concurrency 64 and gains only 0.9 % more at concurrency 128 (§4.5). At the mean output length of this workload (191.6 tokens per request) that ceiling corresponds to roughly 3.7 req/s, which is consistent with the open-loop series still climbing at rate 8.
+
+**The offline point.** The point where rate = ∞ is not an extension of the finite-rate series. Under this condition, 200 requests are submitted simultaneously, resulting in a TTFT p50 of 3,553 ms and a p95 of 6,767 ms — values that differ by two orders of magnitude from those at finite rates. The average queue time also reaches 2,704 ms. This is not a failure due to saturation, but rather a transient phenomenon caused by the initial burst exceeding the batch capacity; it is not a steady-state measurement. Since the two cannot be interpreted as a single curve, they are separated by a dotted vertical line in the figure.
 
 <!-- Facts to state:
   - TTFT p50 76 -> 124 ms and p95 151 -> 245 ms over rate 1 -> 8
@@ -277,7 +304,7 @@ not a continuation of the finite-rate series. -->
 
 ![](../figures/fig07_gpu_count_comparison.png)
 
-**Figure 9.** <!-- TODO: caption. Must state that P2P was disabled; see below. -->
+**Figure 9.** Figure 9. TTFT p95, TPOT p95 and output throughput against arrival rate for one, two and four GPUs (7B, ShareGPT). All three series were measured on one 4×A40 instance, so host differences cannot contribute. Every tensor-parallel figure in this section was obtained with NCCL peer-to-peer transport and the custom all-reduce kernel disabled (§3.3); these are therefore conservative lower bounds on the achievable gain.
 
 <!-- Facts to state:
   - tp=2: +32.5% throughput at rate 8, +43.9% at rinf
