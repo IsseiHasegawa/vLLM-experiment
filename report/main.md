@@ -112,7 +112,7 @@ not admit longer prompts. The random workload is fixed-length and therefore step
 
 Showing only the nominal distribution would result in an overestimation of the actual processed tail by a factor of 65. Therefore, in Figure 2, both distributions are overlaid, and the upper limit of 1,024 tokens is explicitly indicated. The claim of a realistic conversational workload in this report is limited to the range within this upper bound.
 
-Caution is also required regarding output length. ShareGPT's realised output lengths have a p95/p50 ratio of 5.8 with a maximum of 1,642 tokens (S1, n = 4,800), i.e. a heavy tail. Under offline conditions (rate = inf), a run ends when its longest request completes, so S1's achieved throughput at rate = inf varies by 41 % across seeds (3.23 / 4.57 / 3.56 req/s). For this reason, we do not derive ShareGPT's capacity from rate = inf. The closed-loop group C2 does not escape this: at concurrency 128 the same three seeds give 3.22 / 4.53 / 3.56 req/s, a 40.6 % spread in the same order, because the cause is prompt sampling rather than the arrival process. Saturation for ShareGPT is therefore located from the shape of the closed-loop curve, each seed normalised against its own plateau, rather than from its level; dataset comparisons are made at matched rates with the seed set held fixed.
+Caution is also required regarding output length. ShareGPT's realised output lengths have a p95/p50 ratio of 5.8 with a maximum of 1,642 tokens (S1, n = 4,800), i.e. a heavy tail. Under offline conditions (rate = inf), a run ends when its longest request completes, so S1's achieved throughput at rate = inf varies by 41 % across seeds (3.23 / 4.57 / 3.56 req/s). For this reason, we do not derive ShareGPT's capacity from rate = inf. The closed-loop group C2 does not escape this: at concurrency 128 the same three seeds give 3.22 / 4.53 / 3.56 req/s, a 40.6 % spread in the same order, because the cause is prompt sampling rather than the arrival process. Saturation for ShareGPT is therefore located from the shape of the closed-loop curve (§4.5) — where the latency-throughput trade-off bends — rather than from its absolute level, which the output-length tail makes seed-dependent; dataset comparisons are made at matched rates with the seed set held fixed.
 
 We specified --ignore-eos for all runs, which pins the generation length to the requested value. This ensures that the output length is no longer influenced by the model’s decision to stop, thereby standardizing the workload across conditions. With prefix caching disabled (§3.3), no KV state is shared between requests even when prompts repeat across repetitions, so the repetitions remain independent. We verified n_cached = 0 across all 46,229 request records.
 
@@ -163,7 +163,7 @@ The first definition is the request_throughput reported by the harness, i.e., th
 
 The second definition is the number of completions by the time of the last arrival divided by the arrival span. While this eliminates the impact of drain, it introduces a reverse bias—requests that were still being processed when arrivals ceased are not counted—and the magnitude of this bias increases with load.
 
-Neither definition is unbiased. Plotting both is a deliberate choice to demonstrate that achieved throughput is a metric sensitive to the definition used. In particular, in this system, since the vLLM accepts all incoming requests into the currently processing batch, congestion manifests as an increase in batch size rather than queue length. Therefore, achieved throughput is a weak indicator of saturation. Claims regarding saturation rely on latency (Figure X) and the closed-loop curve (Figure Y).
+Neither definition is unbiased. Plotting both is a deliberate choice to demonstrate that achieved throughput is a metric sensitive to the definition used. In particular, in this system, since the vLLM accepts all incoming requests into the currently processing batch, congestion manifests as an increase in batch size rather than queue length. Therefore, achieved throughput is a weak indicator of saturation. Claims regarding saturation rely on latency (Figure 3) and the closed-loop curve (Figure 10).
 
 For token-level throughput, we report both output_throughput, which counts only output tokens, and total_token_throughput, which sums both inputs and outputs. Since the former represents productivity on the decode side and the latter represents the total workload including prefill, the difference between the two serves as the result when comparing conditions with different input-to-output ratios (I1 and I2).
 
@@ -314,7 +314,7 @@ was measured on the Session C instance.
 
 ![](../figures/fig11_step_parallelism.png)
 
-**Figure 10.** <!-- TODO: caption. Three panels. -->
+**Figure 11.** <!-- TODO: caption. Three panels. -->
 
 <!-- decode-only steps 32.18 -> 22.39 -> 18.07 ms (tp=1/2/4), a 1.78x improvement
      prefill-carrying steps 73.34 -> 64.48 -> 58.20 ms, a 1.26x improvement
@@ -335,7 +335,7 @@ was measured on the Session C instance.
 
 ![](../figures/fig09_resources_vs_rate.png)
 
-**Figure 11.** <!-- TODO: caption. -->
+**Figure 12.** <!-- TODO: caption. -->
 
 <!-- The 0.5B model reaches a framework-bound regime (D27). Per-process CPU from the
      resource logger. This is where the task's "Document CPU performance" is answered. -->
