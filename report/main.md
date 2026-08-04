@@ -289,11 +289,15 @@ The efficiency of the prefill itself also depends on the input length. The effec
 
 ![](../figures/fig04_dataset_comparison.png)
 
-**Figure 7.** <!-- TODO: caption. -->
+**Figure 7.** ShareGPT against the random workload at matched arrival rates (Qwen2.5-7B, one GPU). Left: TTFT p95 on a logarithmic axis, where ShareGPT sits
+above random at every finite rate because its prompt-length tail reaches 767 tokens against a fixed 256. Right: output token throughput on a linear axis,
+where the ordering reverses above rate 5 — ShareGPT generates 191.6 output tokens per request on average against a fixed 128, so the two workloads do not
+present the same amount of work at the same arrival rate. The random series shown here is S2; the extension to 20 req/s (S2b) is discussed in the text but
+plotted separately, since it uses a rate grid the ShareGPT series does not cover.
 
 ![](../figures/fig06_model_comparison.png)
 
-**Figure 8.** <!-- TODO: caption. -->
+**Figure 8.** **Figure 8.** Qwen2.5-7B against Qwen2.5-0.5B on ShareGPT (one GPU), with TTFT p95, TPOT p95 and output throughput on logarithmic axes. The two models are swept over different arrival-rate grids ({1…8} and {1…32} req/s, §3.3) because the 0.5B model does not saturate within the 7B grid, so the series overlap only up to rate 8; beyond that point the 0.5B curve stands alone and is not a comparison. The vertical separation differs by phase — roughly threefold on TTFT against roughly sixfold on TPOT at rate 1 — which §4.2 attributes to the load-independent cost that sits outside prefill computation.
 
 **The effect of prompt length distribution.** When compared at the same rate, the random workload has a lower TTFT. The p95 values are 109 ms vs. 151 ms (28 % lower) at rate 1, and 211 ms vs. 245 ms (14 % lower) at rate 8 (Figure 7, left). While prompts in the random workload are fixed at 256 tokens, ShareGPT has a tail where the p95 reaches 767 tokens (§3.2). Since the prefill workload is proportional to prompt length, this tail pushes up the p95 TTFT. The gap narrows as the load increases because, at high rates, multiple requests coexist within a batch, averaging out the impact of individual prompt lengths.
 
@@ -313,16 +317,22 @@ The rankings reverse for output token throughput. ShareGPT outperforms random up
 
 **Figure 9.** Figure 9. TTFT p95, TPOT p95 and output throughput against arrival rate for one, two and four GPUs (7B, ShareGPT). All three series were measured on one 4×A40 instance, so host differences cannot contribute. Every tensor-parallel figure in this section was obtained with NCCL peer-to-peer transport and the custom all-reduce kernel disabled (§3.3); these are therefore conservative lower bounds on the achievable gain.
 
-<!-- Facts to state:
-  - tp=2: +32.5% throughput at rate 8, +43.9% at rinf
-  - tp=4: a further +15%, i.e. sublinear
-  - EVERY tp number must carry the qualifier "with NCCL P2P and custom all-reduce
-    disabled" (D43). These are conservative lower bounds. -->
+**Tensor parallelism.** Increasing the number of GPUs to two improves achieved throughput by 32.5 % at rate 8 and 44.0 % at rate ∞. With four GPUs, the improvements are 52.0 % at rate 8 and 55.4 % at rate ∞; however, the incremental gains from two to four GPUs are limited to 14.7 % and 7.9 %, respectively, indicating a clear diminishing return. In terms of processing capacity per GPU, tp = 1 yields 3.51 req/s, while tp = 2 yields 2.33 req/s (66 %) and tp = 4 yields 1.34 req/s (38 %). G1, G2, and G4 were measured on the same instance (§3.3), and in a comparison with matched seeds, the gains for tp = 2 at rate 8 were +38.7 %, +26.1 %, and +34.2 % — all three seeds clearly positive. Note that these values were measured with NCCL peer-to-peer transfers and the custom all-reduce kernel disabled (§3.3) and represent the lower bound of achievable gains.
 
-<!-- P1 insert: one paragraph comparing pp=2 against tp=2 at equal GPU count, plus a new
-     Figure. Do NOT modify Figure 9 - add a separate figure. Note that pp>1 switches vLLM
-     to step_with_batch_queue, so step-axis data is not comparable with the tp series;
-     the pp comparison rests on request-axis metrics only. -->
+The gains vary depending on the phase. At rate 8, the decode-side TPOT p95 decreases from 61.4 ms at tp = 1 to 43.6 ms at tp = 2 and 36.9 ms at tp = 4. On the other hand, the prefill-side TTFT p95 changes only from 248 ms to 227 ms and then to 213 ms. In terms of phase time per request, at rate 5, tp = 2 reduces prefill time by 13.2 % and decode time by 28.5 %, while at tp = 4, the reductions are 16.9 % and 42.5 %, respectively (Figure 13). Tensor parallelism is primarily effective for decoding.
+
+**Pipeline parallelism.** When the number of GPUs is fixed at two and only the strategy is changed, throughput and latency decouple. The achieved throughput for pp = 2 is indistinguishable from that of tp = 1. The average difference across 24 data points (8 rates × 3 repetitions) with matched seeds is −0.3 %, with t = −0.38, which is not significantly different from zero. Although individual points fluctuate by up to ±9 %, the sign is inconsistent, in contrast to tp = 2, which is positive at all 24 points in the same test. Using the same two GPUs, tp = 2 achieves a 32.5 % gain at rate 8, whereas pp = 2 converts none of the second GPU into throughput.
+
+The results are reversed for latency. The TTFT p95 for pp = 2 falls below that of tp = 1 at all 21 points on the finite grid with matched seeds, with an average of −11.7 % (t = −12.0). This difference is consistently significant across individual rates in the range of t = −2.8 to −14.3, and since the same magnitude is observed in the mean TTFT at −11.7 % (t = −13.5), this is not a phenomenon specific to p95. The average prefill time recorded by the instrumentation is also reduced by 10.4 % at rate 5. On the other hand, decoding remains unchanged. The change in average decode time at the same rate is −1.7 %, which falls within the estimated tolerance for host-to-host variation between sessions (§3.5) and aligns with the direction in which that bias already acts.
+
+It is noteworthy that, in terms of prefill improvements, pp = 2 is not inferior to tp = 2. In the same seed-matched test, the TTFT p95 for tp = 2 is −9.9 % (t = −10.2), which is nearly equivalent to the −11.7 % for pp = 2. When using two GPUs, prefill latency improves by roughly the same amount with either strategy, but only tensor parallelism increases throughput.
+
+This difference can be explained by the communication patterns. Since decoding generates only one token per step, even when pipelined, stages 0 and 1 are simply passed through in series, resulting in no parallelism. With tensor parallelism, all layers are split, reducing the amount of weight reads per GPU and increasing exactly the resource that limits decoding. Since decoding accounts for 98.7 % of the request time (§4.2), tensor parallelism is the only approach that drives throughput. On the other hand, prefill processes multiple tokens in a single step, allowing processing to overlap between stages, which is why pipeline parallelism shortens it as well.
+
+![](../figures/fig12_parallelism_phases.png)
+
+**Figure 13.** Which phase each parallelism strategy shortens (Qwen2.5-7B, ShareGPT). Left: mean prefill and decode time per request at rate 5 on a
+logarithmic axis, annotated with the change against tp = 1; the two phases differ by two orders of magnitude, hence the log scale. Right: the same change against tp = 1 across the rate grid, hollow markers for prefill and filled for decode. The tp series is read against a shared baseline within one instance, whereas pp = 2 was measured in Session D on a separate host and carries the ±3 % tolerance established in §3.5; the prefill reduction under pp = 2 clears that tolerance while the decode change does not. Because pipeline parallelism forces vLLM onto the batch-queue execution path, Session D produces no step-axis log (§3.1), so the phase times here are request-axis quantities and the step-level decomposition in §5.2 is available for the tp series only.
 
 ### 4.5 Closed-loop behaviour
 
