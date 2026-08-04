@@ -5,7 +5,7 @@
   fig03  rate -> throughput (requests/s, tokens/s)     S1
   fig04  rate -> TTFT p95 and throughput, ShareGPT vs random   S1 vs S2
   fig06  rate -> TTFT p95, TPOT p95 and throughput, 7B vs 0.5B S1 vs S3
-  fig07  rate -> TTFT p95, TPOT p95 and throughput, 1/2/4 GPUs G1/G2/G4 (+P1)
+  fig07  rate -> TTFT p95, TPOT p95 and throughput, 1/2/4 GPUs G1/G2/G4
   fig10  closed-loop latency vs throughput                     C2 (+C2x)
 
 Error bars are the standard deviation over the 3 repetitions of each point.
@@ -243,16 +243,16 @@ def fig06(runs, outdir):
 
 def fig07(runs, outdir):
     """GPU count. G1/G2/G4 are all measured on the same multi-GPU instance,
-    so the only difference between the series is the parallelism setting."""
-    # P1 (pp=2) uses the same two GPUs as G2 (tp=2), so the pair isolates the
-    # communication pattern - all-reduce at every layer versus one activation
-    # hand-off per stage boundary - rather than the device count.
+    so the only difference between the series is the parallelism setting.
+    P1 (pp=2) is deliberately excluded: it ran on a separate host in session D,
+    so adding it here would break the single-instance property this figure
+    relies on. The pp/tp comparison is figure 12 instead."""
     groups = [g for g in ("G1", "G2", "G4") if select(runs, group=g)]
     labels = {"G1": "1 GPU (tp=1)", "G2": "2 GPUs (tp=2)", "G4": "4 GPUs (tp=4)"}
     if not groups:
-        print("  SKIP fig07: no G1/G2/G4/P1 runs")
+        print("  SKIP fig07: no G1/G2/G4 runs")
         return None
-    return _overlay(runs, outdir, groups, [names[g] for g in groups],
+    return _overlay(runs, outdir, groups, [labels[g] for g in groups],
                     "Effect of GPU count and parallelism strategy "
                     "(Qwen2.5-7B, ShareGPT, single instance)",
                     "fig07_gpu_count_comparison",
