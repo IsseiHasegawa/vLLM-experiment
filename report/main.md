@@ -422,6 +422,22 @@ In summary, tensor parallelism alleviates the amount of weight streaming per GPU
 <!-- tp=4 crosses NUMA (SYS) whereas tp=2 stays within one NUMA node (PXB).
      Reference the recorded `nvidia-smi topo -m` output in Appendix C. -->
 
+The gain from doubling the degree of parallelism is not constant. At rate 8, the gain from tp = 1 to tp = 2 is 32.5 %, whereas the gain from tp = 2 to tp = 4 is 14.7 %, less than half. At rate ∞ the difference is larger still: 44.0 % against 7.9 %. Step times behave the same way, with the reduction falling from 1.449x (72 % of the ideal 2.0) to 1.241x (62 %).
+
+**What sharding can divide, and what it cannot.** Using the weight-transfer time from §5.3 makes the shape of the diminishing return visible. Subtracting the theoretical weight-transfer time from the step time leaves a residual of 10.43 ms at tp = 1, 11.35 ms at tp = 2, and 12.49 ms at tp = 4. Weight transfer falls exactly in inverse proportion to the shard count, from 21.84 ms to 5.46 ms, but the residual does not fall at all: it grows by 19.7 %.
+
+This decomposition is an approximation, and it carries two reservations. First, the weight-transfer time is computed from the A40's theoretical peak bandwidth of 696 GB/s; effective bandwidth is lower, so both the absolute residual and its growth rate depend on that assumption. Assuming an effective bandwidth 10 % below peak puts the growth above 50 %. Second, the residual is not a measurement of communication. At tp = 1 the residual is already 10.43 ms, and that configuration has no inter-GPU traffic, so the residual also collects attention computation, kernel launches, and framework overhead. The 2.06 ms increment from tp = 1 to tp = 4 is consistent with the added all-reduce, but it has not been isolated from the rest.
+
+What the decomposition does show is a single point: the part that sharding can shrink becomes smaller, while the part it cannot shrink does not. As the degree of parallelism rises, the latter takes up a larger share, and the gain diminishes.
+
+**The topology is not symmetric.** According to the recorded `nvidia-smi topo -m` output (Appendix C), GPU0 and GPU1 are connected by PXB and both belong to NUMA node 0. GPU2 and GPU3 are connected by PIX and belong to NUMA node 1. Between GPU0 and GPU2 the path is SYS, that is, across the CPU interconnect. The CPU affinities are likewise split, 0-23,48-71 against 24-47,72-95.
+
+The resource log confirms which GPUs were used. At tp = 2, GPU0 and GPU1 each hold 43,831 MiB of VRAM while GPU2 and GPU3 hold 3 MiB, so the all-reduce at tp = 2 completes within one NUMA node over the PXB link. At tp = 4 all four devices hold 44,115 MiB, so part of every aggregation necessarily crosses SYS. This difference in path is a plausible contributor to the growth in the residual.
+
+Memory-controller utilization is symmetric within each configuration (39.5 / 39.3 / 39.7 / 39.4 % at tp = 4), so the bandwidth relief reported in §5.3 is not an artifact of one device.
+
+**These measurements are a conservative lower bound.** As stated in §3.3, NCCL peer-to-peer transport and the custom all-reduce kernel are disabled in this environment (D43). The server log records that PYNCCL was in fact selected as the all-reduce backend, so optimized paths such as `QUICK_REDUCE` and `SYMM_MEM` were not used. These mechanisms lower communication cost, so disabling them pushes the residual up. The diminishing return observed here may therefore be stronger than what the same GPU configuration could achieve.
+
 ### 5.5 CPU and framework-bound behaviour
 
 ![](../figures/fig09_resources_vs_rate.png)
