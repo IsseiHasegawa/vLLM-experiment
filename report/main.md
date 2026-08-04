@@ -6,9 +6,9 @@ Repository: https://github.com/IsseiHasegawa/vLLM-experiment
 <!--
 TARGET: 6-8 pages. Budget per section is noted in each heading comment.
 FIGURE NUMBERING is by document order, not by filename. Source file is noted at each slot.
-MARKERS:
-  <!-- TODO --> = must fix before submission
-  <!-- P1 insert --> = add only if the pp=2 session is executed; delete the marker otherwise
+MARKERS (written without comment delimiters here, since HTML comments cannot nest):
+  `TODO` = must fix before submission
+  `P1 insert` = add only if the pp=2 session is executed; delete the marker otherwise
 WRITING ORDER: 3 -> 4 -> 5 -> 6 -> 1 -> Abstract -> 2
 -->
 
