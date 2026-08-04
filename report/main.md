@@ -216,7 +216,7 @@ Two consequences follow, and both are stated where the numbers appear (§4.4). T
 Rule: if a sentence contains "because", "due to", or "this is explained by",
 it belongs in section 5. Check this before committing the section. -->
 
-### c
+### 4.1 Effect of arrival rate
 
 <!-- BUDGET 0.8p. Answers RQ1. -->
 
@@ -298,13 +298,13 @@ present the same amount of work at the same arrival rate. The random series show
 
 **Figure 8.** Qwen2.5-7B against Qwen2.5-0.5B on ShareGPT (one GPU), with TTFT p95, TPOT p95 and output throughput on logarithmic axes. The two models are swept over different arrival-rate grids ({1…8} and {1…32} req/s, §3.3) because the 0.5B model does not saturate within the 7B grid, so the series overlap only up to rate 8; beyond that point the 0.5B curve stands alone and is not a comparison. The vertical separation differs by phase — roughly threefold on TTFT against roughly sixfold on TPOT at rate 1 — which §4.2 attributes to the load-independent cost that sits outside prefill computation.
 
-**The effect of prompt length distribution.** When compared at the same rate, the random workload has a lower TTFT. The p95 values are 109 ms vs. 151 ms (28 % lower) at rate 1, and 211 ms vs. 245 ms (14 % lower) at rate 8 (Figure 7, left). While prompts in the random workload are fixed at 256 tokens, ShareGPT has a tail where the p95 reaches 767 tokens (§3.2). Since the prefill workload is proportional to prompt length, this tail pushes up the p95 TTFT. The gap narrows as the load increases because, at high rates, multiple requests coexist within a batch, averaging out the impact of individual prompt lengths.
+**The effect of prompt length distribution.** When compared at the same rate, the random workload has a lower TTFT. The p95 values are 109 ms vs. 151 ms (28 % lower) at rate 1, and 211 ms vs. 245 ms (14 % lower) at rate 8 (Figure 7, left). While prompts in the random workload are fixed at 256 tokens, ShareGPT has a tail where the p95 reaches 767 tokens (§3.2). Since the prefill workload is proportional to prompt length, this tail pushes up the p95 TTFT. The gap narrows as the load increases: from 28 % at rate 1 to 14 % at rate 8.
 
 The rankings reverse for output token throughput. ShareGPT outperforms random up to rate 5 (612 vs. 580 tok/s), but random overtakes ShareGPT at rate 8 (675 vs. 874 tok/s). ShareGPT's average output length is 191.6 tokens, while random has a fixed output length of 128 tokens; thus, even at the same arrival rate, the amount of tokens to be generated differs. Consequently, comparing throughput across datasets cannot be done simply by standardizing the rate.
 
 **Difference in capacity.** Since random did not reach saturation on the initial grid (maximum 8 req/s), the grid was extended to 20 req/s in S2b. The achieved throughput continues to increase even at rate 20, reaching 12.10 req/s with an output of 1,549 tok/s, and shows a 12 % increase in the range from rate 16 to 20. Saturation manifests in latency rather than throughput. TPOT p95 jumps from 50.5 ms at rate 8 to 85.1 ms at rate 12, and subsequently plateaus at 97–100 ms. These rates lie beyond the grid shown in Figure 7, which covers the two workloads only where they overlap. Even with the same 7B model and the same GPU, simply changing the prompt length distribution can alter the sustainable load by more than threefold.
 
-**The impact of model size varies by phase.** At rate 1, TTFT p95 is 52 ms for the 0.5B model compared to 151 ms for the 7B model — a 2.9-fold difference — while TPOT p95 is 6.1 ms versus 34.8 ms — a 5.8-fold difference (Figure 8). Since the ratio of parameter counts is 14:1, neither ratio matches it, but the degree of divergence varies significantly between phases. As shown in §4.2, for the 0.5B model, 48–71 % of client TTFT lies outside the prefill computation; since this fixed cost does not depend on model size, it reduces the TTFT difference. Because decoding does not incur a similar fixed cost, the TPOT ratio approaches the model size ratio.
+**The impact of model size varies by phase.** At rate 1, TTFT p95 is 52 ms for the 0.5B model compared to 151 ms for the 7B model — a 2.9-fold difference — while TPOT p95 is 6.1 ms versus 34.8 ms — a 5.8-fold difference (Figure 8). Since the ratio of parameter counts is 14:1, neither ratio matches it, but the degree of divergence varies significantly between phases. As shown in §4.2, for the 0.5B model, 48–71 % of client TTFT lies outside the prefill computation, whereas decode carries no comparable fixed component. §5.5 relates this to the phase-dependent ratios above.
 
 **The response to load also differs.** The p95 TTFT for 0.5B remains nearly flat at 51–53 ms from rates 1 to 8, in contrast to 7B, which rises from 151 ms to 245 ms. 0.5B begins to respond to load at rate 12 and beyond, increasing from 59 ms to 78 ms (rate 32). Since the two models were measured at different arrival rate grids (§3.3), the results up to rate 8 should be interpreted as a comparison under the same load, while those beyond that point should be interpreted as the behavior of the 0.5B model alone. The peak output throughput is 675 tok/s for the 7B at rate 8 and 3,371 tok/s for the 0.5B at rate 32, a difference of 5.0 times.
 
@@ -326,7 +326,7 @@ The results are reversed for latency. The TTFT p95 for pp = 2 falls below that o
 
 It is noteworthy that, in terms of prefill improvements, pp = 2 is not inferior to tp = 2. In the same seed-matched test, the TTFT p95 for tp = 2 is −9.9 % (t = −10.2), which is nearly equivalent to the −11.7 % for pp = 2. When using two GPUs, prefill latency improves by roughly the same amount with either strategy, but only tensor parallelism increases throughput.
 
-This difference can be explained by the communication patterns. Since decoding generates only one token per step, even when pipelined, stages 0 and 1 are simply passed through in series, resulting in no parallelism. With tensor parallelism, all layers are split, reducing the amount of weight reads per GPU and increasing exactly the resource that limits decoding. Since decoding accounts for 98.7 % of the request time (§4.2), tensor parallelism is the only approach that drives throughput. On the other hand, prefill processes multiple tokens in a single step, allowing processing to overlap between stages, which is why pipeline parallelism shortens it as well.
+The two strategies therefore separate cleanly: the same two devices buy throughput under tensor parallelism and prefill latency under pipeline parallelism. §5.3 accounts for the mechanism.
 
 ![](../figures/fig12_parallelism_phases.png)
 
