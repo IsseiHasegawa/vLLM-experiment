@@ -442,10 +442,30 @@ Memory-controller utilization is symmetric within each configuration (39.5 / 39.
 
 ![](../figures/fig09_resources_vs_rate.png)
 
-**Figure 12.** <!-- TODO: caption. -->
+**Figure 12.** **Figure 12.** Resource utilization against arrival rate (Qwen2.5-7B, ShareGPT,
+one GPU). Left: GPU counters from pynvml — SM utilization is the fraction of
+time any kernel was resident, memory-controller utilization the fraction of time
+the controller was busy, so the gap between the two curves is what identifies
+the bandwidth-bound regime of §5.3. Right: per-process CPU from psutil, in
+percent of a single core, so values above 100 % mean one process spanning more
+than one core. Samples are taken at 1 Hz and averaged over the measured section
+of each run, excluding start-up and warm-up (§3.4); the annotation converts the
+server peak into a share of the container's allocation.
 
 <!-- The 0.5B model reaches a framework-bound regime (D27). Per-process CPU from the
      resource logger. This is where the task's "Document CPU performance" is answered. -->
+
+The analysis so far has concerned the 7B model. With the 0.5B model, the limiting resource changes.
+
+**Throughput plateaus while the GPU sits idle.** At rate 8, the 7B model reaches 88.8 % SM utilization and 94.2 % memory-controller utilization, the saturated memory bandwidth described in §5.3. At the same rate the 0.5B model reaches only 54.9 % and 39.3 %. Raising the rate to 32 leaves these at 53.3 % and 38.8 %, so nearly half the GPU remains unused (Figure 12, left). GPU power tells the same story: 173–182 W for the 0.5B model against 273 W for the 7B, a difference of 100 W that reflects computation not being performed.
+
+**The CPU side behaves in the opposite way.** The CPU usage of the vLLM server process rises only from 28.1 % at rate 1 to 39.4 % at rate 8 for the 7B model, peaking at 40.5 % (rate 6). For the 0.5B model it is 65.3 % at rate 1, 120.8 % at rate 8, and 141.2 % at rate 32, peaking at 144.4 % (rate 24) (Figure 12, right). Exceeding 100 % means a single process is occupying more than one core. The benchmark client follows the same trend, rising from 3.9 % to 40.6 %.
+
+**This is not exhaustion of CPU resources.** System-wide CPU usage stays between 5 % and 8 % throughout, for both models. The server process occupying 1.4 cores leaves ample headroom, and adding cores would not move this limit. The constraint is not the quantity of the resource but the fact that scheduling, tokenization, and HTTP handling proceed serially within a single process. The regime is framework-bound rather than CPU-bound.
+
+**The step-axis log corroborates this.** The share of per-step time spent in scheduling is 2.2 % for the 7B model at rate 8 (0.801 ms against 36.17 ms of execution), against 5.4 % for the 0.5B model (0.303 ms against 5.29 ms). At rate 32 the 0.5B figure rises to 8.2 % (0.549 ms against 6.18 ms). The smaller the model — and therefore the shorter its execution step — the larger the share taken by fixed CPU work, and that share grows with load.
+
+This result matches the observation in §4.2, where 48–71 % of the client-observed TTFT for the 0.5B model fell outside prefill computation, with the proportion rising with the arrival rate. The CPU-side work measured here is what occupies that interval. For small models, the serving layer determines performance more than the model itself.
 
 ---
 
