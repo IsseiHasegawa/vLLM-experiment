@@ -5,6 +5,9 @@ set -euo pipefail
 cd "$(dirname "$0")"
 pandoc main.md \
   --resource-path=.:..:../figures \
+  --citeproc \
+  --bibliography=references.bib \
+  --csl=ieee.csl \
   --pdf-engine=xelatex \
   -V geometry:margin=1in \
   -V fontsize=11pt \
