@@ -277,6 +277,27 @@ not a continuation of the finite-rate series. -->
      to step_with_batch_queue, so step-axis data is not comparable with the tp series;
      the pp comparison rests on request-axis metrics only. -->
 
+### 4.5 Closed-loop behaviour
+
+<!-- BUDGET 0.4p. Completes RQ1: the steady-state view that open-loop
+     overload points cannot provide. -->
+
+![](../figures/fig10_closed_loop_tradeoff.png)
+
+**Figure 10.** Closed-loop latency-throughput trade-off (7B, ShareGPT, 1 GPU).
+Each point is one concurrency limit, labelled on the plot; error bars are the
+standard deviation over three repetitions on both axes. C2x (c=128, open marker)
+was measured on the Session C instance.
+
+<!-- Facts to state:
+  - output throughput 31.9 -> 717.4 tok/s across c=1..128; e2e p95 flat at
+    19.2-20.6 s for c=1..8, then rising 23.0 -> 27.8 s from c=16
+  - the knee sits between c=8 and c=16
+  - c=64 -> c=128 buys 0.9% throughput for 5.3% more p95 latency
+  - closed-loop peak 711 tok/s (c=64) vs open-loop 675 tok/s at rate 8
+  - variance is anti-correlated across the two axes: throughput cv 0.4% -> 12.9%,
+    p95 cv 20.6% -> 6.8% (D54). REASONS belong in section 5. -->
+
 ---
 
 ## 5. Bottleneck Analysis
