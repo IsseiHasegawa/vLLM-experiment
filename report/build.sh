@@ -8,6 +8,7 @@ pandoc main.md \
   --citeproc \
   --bibliography=references.bib \
   --csl=ieee.csl \
+  -M link-citations=true \
   --pdf-engine=xelatex \
   -V geometry:margin=1in \
   -V fontsize=11pt \
