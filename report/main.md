@@ -216,7 +216,7 @@ Two consequences follow, and both are stated where the numbers appear (§4.4). T
 Rule: if a sentence contains "because", "due to", or "this is explained by",
 it belongs in section 5. Check this before committing the section. -->
 
-### 4.1 Effect of arrival rate
+### c
 
 <!-- BUDGET 0.8p. Answers RQ1. -->
 
@@ -260,12 +260,6 @@ Within the finite-rate range, the client is able to send requests at the specifi
 
 **The offline point.** The point where rate = ∞ is not an extension of the finite-rate series. Under this condition, 200 requests are submitted simultaneously, resulting in a TTFT p50 of 3,553 ms and a p95 of 6,767 ms — values that differ by two orders of magnitude from those at finite rates. The average queue time also reaches 2,704 ms. This is not a failure due to saturation, but rather a transient phenomenon caused by the initial burst exceeding the batch capacity; it is not a steady-state measurement. Since the two cannot be interpreted as a single curve, they are separated by a dotted vertical line in the figure.
 
-<!-- Facts to state:
-  - TTFT p50 76 -> 124 ms and p95 151 -> 245 ms over rate 1 -> 8
-  - sustainable capacity 3.2 req/s (7B, ShareGPT)
-  - queueing delay is approximately zero at all rates; the running batch grows instead
-  - DO NOT write "saturation explosion" for the rate 8 -> inf jump. The inf point is a
-    burst transient, not a steady state. Say so explicitly. -->
 
 ### 4.2 Phase-level behaviour
 
@@ -273,13 +267,20 @@ Within the finite-rate range, the client is able to send requests at the specifi
 
 ![](../figures/fig08_phase_breakdown.png)
 
-**Figure 6.** <!-- TODO: caption. -->
+**Figure 6.** Where a request's time goes, and what the client's wait is made of (Qwen2.5-7B, one GPU, rate 5). Left: mean time per request split into queue, prefill and decode for the two fixed-length workloads, from the request-axis log. Queue and prefill are labelled rather than drawn to scale, since at 0.9 ms and 126 ms against a 6.3 s decode they would be invisible; the bars are dominated by decode in both cases even though the two workloads invert the input-to-output ratio. Right: the client-observed TTFT for the same runs, split into the queue and prefill the server recorded and the remainder, which covers HTTP transfer, serialization and tokenization. Note that the two panels use different vertical scales: the left is in seconds of whole-request time, the right in milliseconds
+of first-token latency.
 
-<!-- Facts to state:
-  - 38% (7B) and 62% (0.5B) of client-observed TTFT lies outside prefill compute.
-    This answers the task's "initial processing, input handling" directly.
-  - I1 (512 in / 128 out) 2,891 tok/s vs I2 (128 in / 512 out) 2,144 tok/s.
-    Same server, only the input/output ratio differs. -->
+**Phase composition.** Decoding accounts for the overwhelming majority of wall-clock time per request. For ShareGPT at rate 5, out of an end-to-end average of 7,434 ms, prefill accounts for 68.8 ms (0.93 %) and decoding accounts for 7,334 ms (98.7 %). This ratio remains consistent even when the workload is changed: it is 1.94 % for I1 (input 512 / output 128), which is prefill-heavy, and 0.30 % for I2 (input 128 / output 512), which is decoding-heavy; in both cases, prefill remains below 2 % (Figure 6, left). Even when the arrival rate is increased from 1 to 8, the prefill ratio only varies from 0.86 % to 0.96 %.
+
+**Breakdown of TTFT.** The TTFT observed by the client cannot be explained by server-side prefill computation alone. For ShareGPT at rate 5, the client-observed average TTFT is 111.6 ms, while the total of queue dwell time and prefill recorded by the instrumentation is 69.0 ms, meaning 38 % of what the client waits for falls outside prefill computation on the server (Figure 6, right). This remainder covers HTTP transfer, serialization, and tokenization. The same difference is 33 % for I1 and 45 % for I2.
+
+This proportion of fixed costs increases as the model becomes lighter. For the 0.5B model, it increases monotonically: 48 % at rate 1, 59 % at rate 8, and 71 % at rate 32. This is because while the prefill computation itself remains nearly unchanged — from 17.2 ms to 14.4 ms — the client-observed TTFT increases from 33.1 ms to 49.2 ms. For smaller models, the potential for TTFT improvement lies outside the computation itself.
+
+**Impact of the input-to-output ratio.** When only the input-to-output ratio is varied on the same server, the ranking of the two workloads reverses depending on which throughput definition is used. In terms of total token throughput, I1 achieves 2,891 tok/s and I2 achieves 2,144 tok/s, with I1 being 35 % higher. However, in terms of output token throughput, I1 is 578 tok/s and I2 is 1,715 tok/s, making I2 3.0 times higher. This is because the former counts prompt tokens as part of the workload, while the latter does not. Reporting only one of these metrics leads to opposite conclusions from the same measurement.
+
+The efficiency of the prefill itself also depends on the input length. The effective throughput during the prefill interval is 4,070 prompt tokens per second for I1 and 1,829 prompt tokens per second for I2, meaning longer prompts are 2.2 times more efficient. ShareGPT falls between these at 3,385 prompt tokens per second.
+
+**Queue.** Queue dwell time is negligible under all conditions (0.95 ms for I1 and 0.02 ms for I2). The slightly longer dwell time in I1, which is prefill-heavy, is due to the longer execution time of steps containing prefill, causing the next request to wait for the step boundary.
 
 ### 4.3 Effect of dataset and model size
 
