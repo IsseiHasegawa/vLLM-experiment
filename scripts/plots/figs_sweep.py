@@ -247,9 +247,8 @@ def fig07(runs, outdir):
     # P1 (pp=2) uses the same two GPUs as G2 (tp=2), so the pair isolates the
     # communication pattern - all-reduce at every layer versus one activation
     # hand-off per stage boundary - rather than the device count.
-    groups = [g for g in ("G1", "G2", "G4", "P1") if select(runs, group=g)]
-    names = {"G1": "1 GPU (tp=1)", "G2": "2 GPUs (tp=2)",
-             "G4": "4 GPUs (tp=4)", "P1": "2 GPUs (pp=2)"}
+    groups = [g for g in ("G1", "G2", "G4") if select(runs, group=g)]
+    labels = {"G1": "1 GPU (tp=1)", "G2": "2 GPUs (tp=2)", "G4": "4 GPUs (tp=4)"}
     if not groups:
         print("  SKIP fig07: no G1/G2/G4/P1 runs")
         return None
