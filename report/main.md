@@ -391,8 +391,6 @@ The extent of the reduction depends on the batch size. When decoding steps are s
 
 Reducing the step time only begins to translate into throughput once saturation is reached. At rate 1, the decoding step for tp = 4 is 2.48 times faster than that for tp = 1 (12.71 ms vs. 31.48 ms). However, the improvement in achieved throughput is limited to 4.6 %. In regions where the arrival rate is below capacity, the arrival rate determines throughput, and faster steps merely increase idle time. The two figures converge only as the load increases: at rate 8, a 1.80-fold increase in step speed results in a 52.0 % increase in throughput, while at rate ∞, a 1.71-fold increase yields a 55.4 % increase (Figure 11, right). Measured at rate 1 the same configuration reports a 4.6 % gain; at rate 8 it reports 52.0 %. A single throughput number is meaningful only together with the rate at which it was taken.
 
-**Figure 11.** <!-- TODO: caption. Three panels. -->
-
 <!-- decode-only steps 32.18 -> 22.39 -> 18.07 ms (tp=1/2/4), a 1.78x improvement
      prefill-carrying steps 73.34 -> 64.48 -> 58.20 ms, a 1.26x improvement
      Same parallelisation, different effect per phase. -->
@@ -402,6 +400,22 @@ Reducing the step time only begins to translate into throughput once saturation 
 <!-- Per-GPU weight traffic falls with tensor parallelism, relieving a
      memory-bandwidth-bound phase; prefill is compute-bound and gains less.
      Connect back to 4.2. -->
+
+The two observations presented in §5.2 — that decoding time is reduced by a factor of 1.80 while prefill time is reduced by only a factor of 1.26, and that the decoding gain decreases as the batch size increases — are two manifestations of the same principle.
+
+**Decoding is memory-bandwidth-limited.** The resource logs demonstrate this directly. At rate 8, SM utilization remains virtually unchanged, ranging from 87.9 % at tp = 1 to 82.1 % at tp = 4. In contrast, memory controller utilization drops from 93.6 % to 64.3 % and then to 39.5 %, falling by more than half. Although the same amount of computation is being performed, only the memory-side bottleneck has been resolved. GPU power consumption also decreased by 34 %, from 285 W to 187 W, consistent with the fact that memory transfers were the primary cause of power consumption.
+
+The magnitudes agree with this account. The A40's memory bandwidth is 696 GB/s, and the Qwen2.5-7B's fp16 weights total approximately 15.2 GB. Since the decoding step reads all parameters once, weight transfer alone takes 21.8 ms. This accounts for 68 % of the measured step time of 32.27 ms at tp = 1. At tp = 4, the weight size per GPU is 3.8 GB, reducing the transfer time to 5.5 ms; however, the measured time is 17.95 ms, with weight transfer accounting for only 30 % of this. As partitioning increases, non-weight costs — such as all-reduce communication and kernel launches — become relatively larger.
+
+**Prefill has already amortized the weight cost.** The prefill step processes hundreds to over a thousand tokens simultaneously. Weights are read once per step, and that cost is divided by the number of tokens processed. Prefill is therefore compute-dense, and is limited by arithmetic throughput rather than memory bandwidth. Reducing weight transfer per GPU through partitioning merely alleviates the burden on non-bottlenecked resources, so the effect is limited. The observed value of 1.26 times reflects this.
+
+**Batch dependency follows the same principle.** As the number of requests included in a decoding step increases, a single weight read is amortized across more tokens. In other words, decoding steps with larger batches exhibit characteristics similar to the prefill step. At tp = 1, even when the batch size is increased eightfold from 4–8 to 32–64, the step time increases by only 5.2 % (from 31.64 ms to 33.29 ms). The marginal cost per additional request is 39 µs, indicating that weight transfer — a fixed cost — is the dominant factor.
+
+This pattern changes after partitioning. At tp = 4, because the fixed cost is reduced to one-fourth, the same batch size increase results in a 62.7 % increase in step time, and the marginal cost reaches 207 µs — 5.3 times that of tp = 1. This is because the communication overhead of all-reduce increases proportionally with batch size. As fixed costs decrease and variable costs increase, the benefit of partitioning diminishes as the batch size grows. The decline from 2.29x to 1.48x observed in §5.2 is a consequence of this.
+
+**Pipeline parallelism does not touch this quantity.** Splitting the model by stages leaves every weight on exactly one GPU, so each device still streams its own share once per step and the aggregate weight traffic per token is unchanged. The measurement matches: pp = 2 changes mean decode time by −1.7 %, within the tolerance for this comparison (§3.5), while tp = 2 on the same two devices cuts it by 28.5 % (§4.4). Prefill behaves differently only because a prefill step carries many tokens, which can be handed from stage 0 to stage 1 while the next group is still being processed; that overlap is what produces the 10.4 % reduction in mean prefill time under pp = 2. Decode admits no such overlap, since one step produces one token per request and the two stages must run in series.
+
+In summary, tensor parallelism alleviates the amount of weight streaming per GPU and is effective only when that is the rate-limiting factor. Decoding satisfies this condition with small batches, while prefill does not. Decoding also ceases to meet this condition as the batch size increases. As shown in §4.2, decoding accounts for 98.7 % of the request time, so this mechanism governs the overall throughput.
 
 ### 5.4 Sublinear scaling and topology
 
