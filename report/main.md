@@ -280,7 +280,7 @@ This proportion of fixed costs increases as the model becomes lighter. For the 0
 
 The efficiency of the prefill itself also depends on the input length. The effective throughput during the prefill interval is 4,070 prompt tokens per second for I1 and 1,829 prompt tokens per second for I2, meaning longer prompts are 2.2 times more efficient. ShareGPT falls between these at 3,385 prompt tokens per second.
 
-**Queue.** Queue dwell time is negligible under all conditions (0.95 ms for I1 and 0.02 ms for I2). The slightly longer dwell time in I1, which is prefill-heavy, is due to the longer execution time of steps containing prefill, causing the next request to wait for the step boundary.
+**Queue.** Queue dwell time is negligible under all conditions (0.95 ms for I1 and 0.02 ms for I2). The slightly longer dwell time in I1 accompanies its longer prefill-carrying steps (§4.4, Figure 13).
 
 ### 4.3 Effect of dataset and model size
 
