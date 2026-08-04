@@ -364,12 +364,32 @@ By examining the marginal gains for each interval, we can identify the point at 
 
 ### 5.1 The KV cache is not the constraint
 
-<!-- KV utilisation 2.1% at rate 8; batch size constant across tp.
-     State the hypothesis, then reject it with the measurement. -->
+As shown in §4.4, tensor parallelism improves throughput by up to 52 %. The first hypothesis to consider in explaining this gain is the KV cache capacity. Adding more GPUs increases the total size of the KV space, allowing it to hold more requests simultaneously. As batch sizes increase, the amount of data processed per step increases, leading to higher throughput — this path is plausible, and KV-space management is central to vLLM's design.
+
+The measurement rejects this hypothesis. In the single-GPU configuration at rate 8, the KV cache utilization averaged 2.13 % per step and peaked at 6.43 %. Over 97 % of the capacity remained unused. A resource with ample capacity cannot be a constraint.
+
+Furthermore, increasing tp does not raise utilization; on the contrary, it decreases. It is 0.77 % at tp = 2 and 0.33 % at tp = 4. This is because while the total size of the KV space increases proportionally with the number of GPUs, the number of requests held simultaneously remains constant. If KV capacity were a constraint, utilization would plateau at a high level when tp is increased, and the relief from that constraint would manifest as improved throughput; however, the observed order is the reverse.
+
+The number of requests included in the decoding step also remains nearly constant across tp values. At rate 8, the average was 22.9 for tp = 1, 22.3 for tp = 2, and 21.7 for tp = 4. Parallelization has not increased the batch size. Therefore, the improvement in throughput is not due to an increase in batch size.
 
 ### 5.2 The mechanism: shorter steps at constant batch
 
 ![](../figures/fig11_step_parallelism.png)
+
+**Figure 11.** Why tensor parallelism helps, measured at step granularity (Qwen2.5-7B, ShareGPT, one 4×A40 instance). Left: mean model-execution time per
+engine step at rate 8, split by whether the step carried context tokens; annotations are the speedup against tp = 1. Chunked prefill is on by default, so
+"carrying prefill" means the step also processed context tokens, not that it was a contiguous prefill interval. Centre: the same decode-only steps binned by
+requests per step — the tp = 1 line is flat while the sharded lines rise. Right: decode step time and throughput gain against arrival rate on separate axes; step time is nearly flat while the gain climbs. Step times are averaged over the measured section of each run (§3.4). Pipeline parallelism produces no step-axis log (§3.1), so pp = 2 does not appear.
+
+In §5.1, we showed that tensor parallelism does not increase the batch size. The throughput gain must therefore originate elsewhere. The step-axis log shows that the execution time per step itself has decreased.
+
+The reduction in execution time varies by phase. At rate 8, the model execution time for steps that perform only decoding is reduced from 32.27 ms at tp = 1 to 22.27 ms at tp = 2 and 17.95 ms at tp = 4 (1.45x, 1.80x). On the other hand, steps that carry prefill only decrease from 72.34 ms to 63.27 ms and then to 57.33 ms (1.14x, 1.26x). The same parallelization settings produce different effects depending on the phase (Figure 11, left).
+
+Combined with the fact that the batch size is constant (§5.1), the mechanism is clear. Parallelization does not process more requests simultaneously; rather, it processes the same number of requests faster.
+
+The extent of the reduction depends on the batch size. When decoding steps are stratified by batch size, the speedup for tp = 4 decreases monotonically: 2.29-fold for batches 4–8, 2.07-fold for 8–16, 1.68-fold for 16–32, and 1.48-fold for 32–64 (Figure 11, center). The step time for tp = 1 remains nearly constant regardless of the batch size (31.1–33.3 ms, 7 % variation), whereas tp = 2 increases with batch size from 19.06 ms to 26.02 ms, and tp = 4 increases from 13.83 ms to 22.51 ms. The gain achieved through partitioning is greater for smaller batches.
+
+Reducing the step time only begins to translate into throughput once saturation is reached. At rate 1, the decoding step for tp = 4 is 2.48 times faster than that for tp = 1 (12.71 ms vs. 31.48 ms). However, the improvement in achieved throughput is limited to 4.6 %. In regions where the arrival rate is below capacity, the arrival rate determines throughput, and faster steps merely increase idle time. The two figures converge only as the load increases: at rate 8, a 1.80-fold increase in step speed results in a 52.0 % increase in throughput, while at rate ∞, a 1.71-fold increase yields a 55.4 % increase (Figure 11, right). Measured at rate 1 the same configuration reports a 4.6 % gain; at rate 8 it reports 52.0 %. A single throughput number is meaningful only together with the rate at which it was taken.
 
 **Figure 11.** <!-- TODO: caption. Three panels. -->
 
