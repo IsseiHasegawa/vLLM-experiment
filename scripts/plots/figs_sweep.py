@@ -17,9 +17,8 @@ import matplotlib.pyplot as plt
 
 import statistics as st
 
-from common import (C, INF_LABEL, MARKERS, SERIES, aggregate, annotate_inf,
-                    log_latency, phase_records, plot_series, save, select,
-                    xpos)
+from common import (C, MARKERS, SERIES, aggregate, annotate_inf, log_latency,
+                    phase_records, plot_series, rate_axis, save, select, xpos)
 
 # Panels for these fields get a log y-axis; see common.log_latency for why.
 # Throughput stays linear: it spans well under one order of magnitude, and the
@@ -39,34 +38,6 @@ def _panel(ax, runs, group, field, label, color, marker, ls="-", inf_x=None,
                 set_ticks=set_ticks)
     annotate_inf(ax, pts, inf_x)
     return pts
-
-
-def _rate_axis(ax, groups_pts, inf_x):
-    """One tick set covering every group's rate grid, shared 'inf' at the end.
-
-    Overlays can mix grids - figure 6 puts 7B (1-8 req/s) against 0.5B
-    (1-32 req/s) - so the union spans 1 to 32 and is unreadable on a linear
-    axis, where 1, 2 and 4 collide while 24 and 32 sit far apart. A log axis
-    spaces them evenly. Only a power-of-two subset is labelled; the remaining
-    rates get unlabelled minor ticks so the points are still locatable.
-    """
-    finite = sorted({float(p[0]) for pts in groups_pts for p in pts
-                     if p[0] != "inf"})
-    if not finite:
-        return
-    # Only switch to log when the grids really are far apart. Figure 6 mixes
-    # 1-8 (7B) with 1-32 (0.5B) and needs it; figures 4 and 7 stay on 1-8,
-    # where a linear axis can label every rate including 3, 5 and 6.
-    wide = max(finite) / min(finite) >= 16
-    if wide:
-        ax.set_xscale("log")
-    major = [r for r in finite if r in (1, 2, 4, 8, 16, 32)] if wide else finite
-    ax.set_xticks(major + [inf_x])
-    ax.set_xticklabels([f"{r:g}" for r in major] + [INF_LABEL])
-    minor = [r for r in finite if r not in major]
-    if minor:
-        ax.set_xticks(minor, minor=True)
-        ax.set_xticklabels([], minor=True)
 
 
 def fig01(runs, outdir):
@@ -204,7 +175,7 @@ def _overlay(runs, outdir, groups, names, title, name, fields=None,
             pts_all.append(_panel(ax, runs, g, field, nm, SERIES[i],
                                   MARKERS[i], "-" if i == 0 else "--",
                                   inf_x=inf_x, set_ticks=False))
-        _rate_axis(ax, pts_all, inf_x)
+        rate_axis(ax, pts_all, inf_x)
         if field in LOG_FIELDS or field in log_fields:
             log_latency(ax)
             ylabel = ylabel.replace(")", ", log scale)")

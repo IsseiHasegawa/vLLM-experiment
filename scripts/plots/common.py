@@ -291,6 +291,35 @@ def annotate_inf(ax, points, inf_x=None):
         ax.axvline(xs[-1], color=C["grey"], lw=0.6, ls=":", alpha=0.7)
 
 
+def rate_axis(ax, groups_pts, inf_x):
+    """One tick set covering every group's rate grid, shared 'inf' at the end.
+
+    Overlays can mix grids - figures 6 and 9 both put 7B (1-8 req/s) against
+    0.5B (1-32 req/s) - so the union spans 1 to 32 and is unreadable on a
+    linear axis, where 1, 2 and 4 collide while 24 and 32 sit far apart. A log
+    axis spaces them evenly. Only a power-of-two subset is labelled; the
+    remaining rates get unlabelled minor ticks so the points are still
+    locatable.
+    """
+    finite = sorted({float(p[0]) for pts in groups_pts for p in pts
+                     if p[0] != "inf"})
+    if not finite:
+        return
+    # Only switch to log when the grids really are far apart. Figures 6 and 9
+    # mix 1-8 (7B) with 1-32 (0.5B) and need it; figures 4 and 7 stay on 1-8,
+    # where a linear axis can label every rate including 3, 5 and 6.
+    wide = max(finite) / min(finite) >= 16
+    if wide:
+        ax.set_xscale("log")
+    major = [r for r in finite if r in (1, 2, 4, 8, 16, 32)] if wide else finite
+    ax.set_xticks(major + [inf_x])
+    ax.set_xticklabels([f"{r:g}" for r in major] + [INF_LABEL])
+    minor = [r for r in finite if r not in major]
+    if minor:
+        ax.set_xticks(minor, minor=True)
+        ax.set_xticklabels([], minor=True)
+
+
 def log_latency(ax):
     """Put a latency axis on a log scale, with readable (non-exponent) ticks.
 

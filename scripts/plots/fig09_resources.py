@@ -1,11 +1,19 @@
-"""Figure 9: resource utilization vs arrival rate.
+"""Figure 9: resource utilization vs arrival rate, 7B against 0.5B.
 
-Left  - GPU SM utilization and memory-controller utilization. The gap between
-        them is the compute-bound / bandwidth-bound signal: decode-dominated
-        load drives the memory controller far harder than the SMs.
-Right - host CPU (total and the busiest core) plus the server/client split.
-        This covers the assignment's "document CPU performance" item and shows
-        whether the co-located benchmark client became the limiter at high rate.
+Left  - GPU SM utilization and memory-controller utilization for both models.
+        On 7B the two sit near 90 % with the memory controller the harder
+        pressed of the pair, which is the bandwidth-bound signal. On 0.5B both
+        fall to roughly half that and flatten, so no GPU resource is the limit.
+Right - per-process CPU for the vLLM server and the co-located benchmark
+        client. The 7B server settles below half a core while the 0.5B server
+        passes a full core and keeps climbing.
+
+The two models share both panels because the claim in section 5.5 is about the
+limiting resource *changing* with model size, not about either model alone:
+moving from 7B to 0.5B pushes the GPU curves down and the CPU curve up in the
+same figure. The two rate grids differ (7B 1-8 req/s, 0.5B 1-32), so the x axis
+is the union of the two on a log scale with a shared offline point; see
+common.rate_axis.
 
 Data: resources*.csv (1 Hz) sliced by the manifest window of each run, averaged
 over the run and then over repetitions.
@@ -15,8 +23,18 @@ import statistics as st
 
 import matplotlib.pyplot as plt
 
-from common import (C, MARKERS, SERIES, INF_LABEL, gpu_columns, mean_of,
-                    rate_key, resource_rows, save, select, xpos)
+from common import (C, MARKERS, SERIES, annotate_inf, gpu_columns, mean_of,
+                    plot_series, rate_axis, rate_key, resource_rows, save,
+                    select)
+
+# Model -> colour, matching figure 6 so the same model keeps the same colour
+# across the report. Metric is encoded by line style and marker instead, which
+# leaves the four curves per panel separable on both channels.
+MODELS = (("S1", "7B", SERIES[0]), ("S3", "0.5B", SERIES[1]))
+GPU_METRICS = (("util", "SM", MARKERS[0], "-"),
+               ("memutil", "memory controller", MARKERS[1], "--"))
+CPU_METRICS = (("cpu_server_pct", "vLLM server", MARKERS[0], "-"),
+               ("cpu_client_pct", "benchmark client", MARKERS[1], "--"))
 
 
 def _by_rate(runs, group, col, gpu_agg=False):
@@ -48,33 +66,48 @@ def _by_rate(runs, group, col, gpu_agg=False):
     return out
 
 
-def _draw(ax, pts, label, color, marker, ls="-"):
-    if not pts:
+def _panel(ax, runs, metrics, inf_x, gpu_agg=False):
+    """Draw every (model, metric) pair on one panel. True if anything drew."""
+    drawn = []
+    for group, model, colour in MODELS:
+        for col, metric, marker, ls in metrics:
+            pts = _by_rate(runs, group, col, gpu_agg=gpu_agg)
+            if not pts:
+                continue  # missing metric: leave the gap, do not interpolate
+            # set_ticks=False because rate_axis below owns the tick set; a
+            # per-series call would leave only the last grid on the axis.
+            plot_series(ax, pts, f"{model}: {metric}", colour, marker, ls,
+                        inf_x=inf_x, set_ticks=False)
+            drawn.append(pts)
+    if not drawn:
         return False
-    xs, labels = xpos(pts)
-    ax.errorbar(xs, [p[1] for p in pts], yerr=[p[2] for p in pts],
-                label=label, color=color, marker=marker, linestyle=ls)
-    if any(l == INF_LABEL for l in labels):
-        ax.set_xticks(xs)
-        ax.set_xticklabels(labels)
+    # annotate_inf reads the offline point off the end of the series, so it
+    # needs one series that actually has one rather than the concatenation.
+    with_inf = next((p for p in drawn if any(q[0] == "inf" for q in p)), None)
+    if with_inf:
+        annotate_inf(ax, with_inf, inf_x)
+    rate_axis(ax, drawn, inf_x)
     return True
 
 
-def fig09(runs, outdir, group="S1"):
-    fig, (a1, a2) = plt.subplots(1, 2, figsize=(8.6, 3.4))
-    any_data = False
+def fig09(runs, outdir, models=MODELS):
+    fig, (a1, a2) = plt.subplots(1, 2, figsize=(9.4, 3.6))
+
+    # One offline position for the whole figure, derived from the widest grid,
+    # so both models' 'inf' points land on the same x. Without this the 0.5B
+    # offline point would sit one of its own steps past 32 while the 7B one sat
+    # one step past 8, and the latter would read as a finite rate near 9.
+    probe = [_by_rate(runs, g, "util", gpu_agg=True) for g, _, _ in models]
+    finite = [float(p[0]) for pts in probe for p in pts if p[0] != "inf"]
+    inf_x = max(finite) * 1.35 if finite else 1.0
 
     # ---- GPU ---------------------------------------------------------------
-    any_data |= _draw(a1, _by_rate(runs, group, "util", gpu_agg=True),
-                      "SM utilization", SERIES[0], MARKERS[0])
-    any_data |= _draw(a1, _by_rate(runs, group, "memutil", gpu_agg=True),
-                      "memory-controller utilization", SERIES[3], MARKERS[3],
-                      "--")
+    any_data = _panel(a1, runs, GPU_METRICS, inf_x, gpu_agg=True)
     a1.set_xlabel("Request rate (req/s)")
     a1.set_ylabel("Utilization (%)")
     a1.set_ylim(0, 105)
     a1.set_title("GPU: compute vs memory bandwidth")
-    a1.legend()
+    a1.legend(fontsize=7.5)
 
     # ---- CPU ---------------------------------------------------------------
     # Only the per-process counters are used. cpu_total and cpu_max_core are
@@ -83,31 +116,18 @@ def fig09(runs, outdir, group="S1"):
     # at 5-8 % regardless of load and cpu_max_core sits near 100 % even at
     # idle. Plotting them would show two meaningless flat lines and hide the
     # server-side trend that the bottleneck analysis rests on. See D33.
-    _draw(a2, _by_rate(runs, group, "cpu_server_pct"),
-          "vLLM server (% of one core)", SERIES[1], MARKERS[1])
-    _draw(a2, _by_rate(runs, group, "cpu_client_pct"),
-          "benchmark client (% of one core)", SERIES[4], MARKERS[4], ":")
-    # The container has 9 vCPUs, i.e. a 900 % ceiling. Stating it in text
-    # rather than drawing the line keeps the axis readable: the server sits
-    # near 40 % on 7B and 144 % on 0.5B, so a line at 900 would flatten both.
+    any_data |= _panel(a2, runs, CPU_METRICS, inf_x)
+    # The container has 9 vCPUs, i.e. a 900 % ceiling, which is left out of the
+    # panel: a line 6x above the highest curve would flatten everything below
+    # it. The earlier version stated the headroom as a text annotation, but
+    # that was computed for a single group and would now report one model's
+    # peak while showing two. The per-model peaks (39.6 % on 7B, 144.4 % on
+    # 0.5B, both against 900 %) are stated in section 5.5 instead.
     # Subtract ~2-3 % from the server series for the logger's own cost (D36).
-    # State the headroom as a ratio, not as a number 20x off the axis: the
-    # panel tops out near 45 % and a bare "900 %" cannot be related to it.
-    peak = max((mean_of(resource_rows(r), "cpu_server_pct")
-                for r in select(runs, group=group)), default=0.0)
-    if peak:
-        # The panel has exactly one free band. The server curve occupies
-        # 28-41 %, the client 3-8 %, and the legend sits at 20-27 %, so the
-        # note goes at 11-17 %. Upper-left crossed the server curve at rates
-        # 5-6 and mid-left ran into the legend.
-        a2.annotate(f"vLLM server peaks at {peak:.0f} % of one core\n"
-                    f"= {peak / 9:.1f} % of the 900 % available (9 vCPU)",
-                    xy=(0.03, 0.29), xycoords="axes fraction", fontsize=7,
-                    color=C["grey"], va="center")
     a2.set_xlabel("Request rate (req/s)")
     a2.set_ylabel("CPU (% of one core)")
     a2.set_title("Process CPU (per-process, container-attributable)")
-    a2.legend()
+    a2.legend(fontsize=7.5)
 
     if not any_data:
         for a in (a1, a2):
@@ -119,7 +139,7 @@ def fig09(runs, outdir, group="S1"):
             a.set_axis_off()
 
     fig.suptitle("Resource utilization vs arrival rate "
-                 "(Qwen2.5-7B, ShareGPT, 1 GPU)", y=1.02)
+                 "(Qwen2.5-7B vs Qwen2.5-0.5B, ShareGPT, 1 GPU)", y=1.02)
     return save(fig, "fig09_resources_vs_rate", outdir)
 
 
