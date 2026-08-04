@@ -292,18 +292,17 @@ The efficiency of the prefill itself also depends on the input length. The effec
 **Figure 7.** ShareGPT against the random workload at matched arrival rates (Qwen2.5-7B, one GPU). Left: TTFT p95 on a logarithmic axis, where ShareGPT sits
 above random at every finite rate because its prompt-length tail reaches 767 tokens against a fixed 256. Right: output token throughput on a linear axis,
 where the ordering reverses above rate 5 — ShareGPT generates 191.6 output tokens per request on average against a fixed 128, so the two workloads do not
-present the same amount of work at the same arrival rate. The random series shown here is S2; the extension to 20 req/s (S2b) is discussed in the text but
-plotted separately, since it uses a rate grid the ShareGPT series does not cover.
+present the same amount of work at the same arrival rate. The random series shown here is S2; The random series shown here is S2. The extension to 20 req/s (S2b) uses a rate grid the ShareGPT series does not cover, so it is reported in the text rather than plotted.
 
 ![](../figures/fig06_model_comparison.png)
 
-**Figure 8.** **Figure 8.** Qwen2.5-7B against Qwen2.5-0.5B on ShareGPT (one GPU), with TTFT p95, TPOT p95 and output throughput on logarithmic axes. The two models are swept over different arrival-rate grids ({1…8} and {1…32} req/s, §3.3) because the 0.5B model does not saturate within the 7B grid, so the series overlap only up to rate 8; beyond that point the 0.5B curve stands alone and is not a comparison. The vertical separation differs by phase — roughly threefold on TTFT against roughly sixfold on TPOT at rate 1 — which §4.2 attributes to the load-independent cost that sits outside prefill computation.
+**Figure 8.** Qwen2.5-7B against Qwen2.5-0.5B on ShareGPT (one GPU), with TTFT p95, TPOT p95 and output throughput on logarithmic axes. The two models are swept over different arrival-rate grids ({1…8} and {1…32} req/s, §3.3) because the 0.5B model does not saturate within the 7B grid, so the series overlap only up to rate 8; beyond that point the 0.5B curve stands alone and is not a comparison. The vertical separation differs by phase — roughly threefold on TTFT against roughly sixfold on TPOT at rate 1 — which §4.2 attributes to the load-independent cost that sits outside prefill computation.
 
 **The effect of prompt length distribution.** When compared at the same rate, the random workload has a lower TTFT. The p95 values are 109 ms vs. 151 ms (28 % lower) at rate 1, and 211 ms vs. 245 ms (14 % lower) at rate 8 (Figure 7, left). While prompts in the random workload are fixed at 256 tokens, ShareGPT has a tail where the p95 reaches 767 tokens (§3.2). Since the prefill workload is proportional to prompt length, this tail pushes up the p95 TTFT. The gap narrows as the load increases because, at high rates, multiple requests coexist within a batch, averaging out the impact of individual prompt lengths.
 
 The rankings reverse for output token throughput. ShareGPT outperforms random up to rate 5 (612 vs. 580 tok/s), but random overtakes ShareGPT at rate 8 (675 vs. 874 tok/s). ShareGPT's average output length is 191.6 tokens, while random has a fixed output length of 128 tokens; thus, even at the same arrival rate, the amount of tokens to be generated differs. Consequently, comparing throughput across datasets cannot be done simply by standardizing the rate.
 
-**Difference in capacity.** Since random did not reach saturation on the initial grid (maximum 8 req/s), the grid was extended to 20 req/s in S2b. The achieved throughput continues to increase even at rate 20, reaching 12.10 req/s with an output of 1,549 tok/s, and shows a 12 % increase in the range from rate 16 to 20. Saturation manifests in latency rather than throughput. TPOT p95 jumps from 50.5 ms at a rate of 8 to 85.1 ms at a rate of 12, and subsequently plateaus at 97–100 ms (Figure 7, right). Even with the same 7B model and the same GPU, simply changing the prompt length distribution can alter the sustainable load by more than threefold.
+**Difference in capacity.** Since random did not reach saturation on the initial grid (maximum 8 req/s), the grid was extended to 20 req/s in S2b. The achieved throughput continues to increase even at rate 20, reaching 12.10 req/s with an output of 1,549 tok/s, and shows a 12 % increase in the range from rate 16 to 20. Saturation manifests in latency rather than throughput. TPOT p95 jumps from 50.5 ms at rate 8 to 85.1 ms at rate 12, and subsequently plateaus at 97–100 ms. These rates lie beyond the grid shown in Figure 7, which covers the two workloads only where they overlap. Even with the same 7B model and the same GPU, simply changing the prompt length distribution can alter the sustainable load by more than threefold.
 
 **The impact of model size varies by phase.** At rate 1, TTFT p95 is 52 ms for the 0.5B model compared to 151 ms for the 7B model — a 2.9-fold difference — while TPOT p95 is 6.1 ms versus 34.8 ms — a 5.8-fold difference (Figure 8). Since the ratio of parameter counts is 14:1, neither ratio matches it, but the degree of divergence varies significantly between phases. As shown in §4.2, for the 0.5B model, 48–71 % of client TTFT lies outside the prefill computation; since this fixed cost does not depend on model size, it reduces the TTFT difference. Because decoding does not incur a similar fixed cost, the TPOT ratio approaches the model size ratio.
 
@@ -315,7 +314,7 @@ The rankings reverse for output token throughput. ShareGPT outperforms random up
 
 ![](../figures/fig07_gpu_count_comparison.png)
 
-**Figure 9.** Figure 9. TTFT p95, TPOT p95 and output throughput against arrival rate for one, two and four GPUs (7B, ShareGPT). All three series were measured on one 4×A40 instance, so host differences cannot contribute. Every tensor-parallel figure in this section was obtained with NCCL peer-to-peer transport and the custom all-reduce kernel disabled (§3.3); these are therefore conservative lower bounds on the achievable gain.
+**Figure 9.** TTFT p95, TPOT p95 and output throughput against arrival rate for one, two and four GPUs (7B, ShareGPT). All three series were measured on one 4×A40 instance, so host differences cannot contribute. Every tensor-parallel figure in this section was obtained with NCCL peer-to-peer transport and the custom all-reduce kernel disabled (§3.3); these are therefore conservative lower bounds on the achievable gain.
 
 **Tensor parallelism.** Increasing the number of GPUs to two improves achieved throughput by 32.5 % at rate 8 and 44.0 % at rate ∞. With four GPUs, the improvements are 52.0 % at rate 8 and 55.4 % at rate ∞; however, the incremental gains from two to four GPUs are limited to 14.7 % and 7.9 %, respectively, indicating a clear diminishing return. In terms of processing capacity per GPU, tp = 1 yields 3.51 req/s, while tp = 2 yields 2.33 req/s (66 %) and tp = 4 yields 1.34 req/s (38 %). G1, G2, and G4 were measured on the same instance (§3.3), and in a comparison with matched seeds, the gains for tp = 2 at rate 8 were +38.7 %, +26.1 %, and +34.2 % — all three seeds clearly positive. Note that these values were measured with NCCL peer-to-peer transfers and the custom all-reduce kernel disabled (§3.3) and represent the lower bound of achievable gains.
 
@@ -346,14 +345,15 @@ Each point is one concurrency limit, labelled on the plot; error bars are the
 standard deviation over three repetitions on both axes. C2x (c=128, open marker)
 was measured on the Session C instance.
 
-<!-- Facts to state:
-  - output throughput 31.9 -> 717.4 tok/s across c=1..128; e2e p95 flat at
-    19.2-20.6 s for c=1..8, then rising 23.0 -> 27.8 s from c=16
-  - the knee sits between c=8 and c=16
-  - c=64 -> c=128 buys 0.9% throughput for 5.3% more p95 latency
-  - closed-loop peak 711 tok/s (c=64) vs open-loop 675 tok/s at rate 8
-  - variance is anti-correlated across the two axes: throughput cv 0.4% -> 12.9%,
-    p95 cv 20.6% -> 6.8% (D54). REASONS belong in section 5. -->
+In open-loop measurements, there is no steady state for arrival rates exceeding capacity (§4.1). In closed-loop measurements, where the number of in-flight requests (the concurrency limit) is fixed, each point has a steady state, allowing the trade-off between latency and throughput to be directly observed.
+
+**Trade-off.** As the concurrency limit increases from 1 to 128, the output throughput increases 22-fold, from 31.9 tok/s to 717.4 tok/s. Meanwhile, the p95 value for end-to-end latency remains nearly flat at 19.2–20.6 seconds up to 8 concurrent executions, then rises from 23.0 seconds to 27.8 seconds starting at 16 (Figure 10).
+
+By examining the marginal gains for each interval, we can identify the point at which the trade-off becomes unfavorable. At each stage where the number of concurrent executions doubles from 1 to 32, throughput increases by 62–95 %, whereas the increase in the p95 value is limited to 2–12 %. From 32 to 64, throughput increases by 14.5 % while p95 increases by 10.3 %, with the two remaining roughly in balance. From 64 to 128, throughput increases by only 0.9 %, while p95 increases by 5.4 %. Therefore, the inflection point lies between 32 and 64 concurrent executions; beyond that, additional parallelism consumes only latency.
+
+**Comparison with the open loop.** The upper limit for the closed loop is 711.3 tok/s at 64 concurrent executions, or 3.73 req/s in terms of requests. For the open loop at rate 8, the values are 675.2 tok/s and 3.54 req/s, with the closed loop outperforming it by 5.4 %. As noted in §4.1, the open-loop series is still on an upward trajectory at rate 8, so this difference indicates that the two are approaching the same upper limit via different paths. The values from the closed loop, which has a steady state, are more direct as estimates of capacity.
+
+**Structure of variance.** The variances along the two axes are inversely correlated. At a concurrency level of 1, the coefficient of variation for output throughput is 0.4 %, whereas that for p95 latency is 20.6 %. At a concurrency level of 128, these figures reverse to 12.9 % and 6.8 %, respectively. This asymmetry also stems from the measurement conditions. The runs used 60 requests at concurrency 1 and 2, 120 at 4 and 8, and 200 at 16 and above (§3.3), so the lower the concurrency, the fewer samples determine the p95. This is why error bars are plotted on both axes in Figure 10; showing only one axis would obscure either the uncertainty at low concurrency or that at high concurrency.
 
 ---
 
