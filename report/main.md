@@ -17,6 +17,12 @@ WRITING ORDER: 3 -> 4 -> 5 -> 6 -> 1 -> Abstract -> 2
 <!-- BUDGET 0.2p / ~150 words. Write LAST.
 Contents: what was measured, three headline numbers, one-sentence conclusion. -->
 
+Inference with a large language model splits into a prefill phase and a decode phase, and recent serving systems treat that split as a design premise. What operators observe, however, is aggregated: a latency figure carries no indication of which phase produced it, or whether the cost lay in phase computation at all. This report forks vLLM, instruments three files so that the per-phase timestamps the engine already computes are written out on a request axis and a step axis independently, and reports 232 measured runs across arrival rate, dataset, model size, GPU count and parallelism strategy.
+
+Three findings follow from the separation. First, load does not appear where an aggregate would suggest: queue dwell time stays below 0.02 ms at every rate because vLLM admits arrivals directly into the running batch, so achieved throughput is a weak saturation signal and capacity is better read from a closed-loop curve — here 711 tok/s, or about 3.7 req/s. Second, the client's wait is not the server's computation: 38 % of observed TTFT falls outside prefill on the 7B model and 48–71 % on the 0.5B, and prefill itself never exceeds 2 % of end-to-end time in any condition. Third, parallelism is phase-selective. Tensor parallelism shortens decode-only steps 1.80× but prefill-carrying steps only 1.26×, and the step-axis log locates the mechanism: batch size is unchanged and the KV cache sits at 2.13 % utilization, while memory-controller utilization falls from 93.6 % to 39.5 % as shards are added. Holding the device count at two and changing only the strategy separates the outcomes completely — pipeline parallelism converts none of the second GPU into throughput (−0.3 %, t = −0.38 over 24 seed-matched points) yet reduces TTFT p95 as much as tensor parallelism does (−11.7 % against −9.9 %).
+
+The limiting resource is not fixed. On the 7B model the memory controller saturates while the server process uses under half a core; on the 0.5B model the GPU sits half idle while that process exceeds 141 % of one core. For small models the serving layer, not the model, sets the limit.
+
 ---
 
 ## 1. Introduction
