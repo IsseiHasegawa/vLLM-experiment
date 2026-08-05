@@ -20,13 +20,15 @@ Middle panel - the same decode-only steps binned by batch size. The speedup
                all-reduce volume grows with the batch.
 
 Right panel  - decode step time and the resulting throughput gain against
-               arrival rate. Steps are ~1.7x faster at rate 1 yet throughput
-               rises only 3.5%: below saturation the arrival rate sets
-               throughput, and a faster step only buys idle time. The two curves
-               converge only once the system is saturated.
+               arrival rate. At rate 1 the tp=4 step is 2.48x faster than tp=1
+               yet throughput rises only 4.6%: below saturation the arrival rate
+               sets throughput, and a faster step only buys idle time. The two
+               curves converge only once the system is saturated.
 
-Data: steps-*.jsonl.gz sliced by the manifest windows of G1/G2/G4, plus
-achieved throughput from the manifest notes.
+Data: steps-*.jsonl.gz for G1/G2/G4, sliced to the measured section of each run
+with the warm-up requests excluded (common.phase_records, D28-D30), plus achieved
+throughput from the bench results. Slicing by the raw manifest window instead
+shifts the rate-8 decode means by about 0.3% (32.18 vs 32.27 ms at tp=1).
 """
 
 import statistics as st
