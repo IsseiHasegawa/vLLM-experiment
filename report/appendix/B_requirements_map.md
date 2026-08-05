@@ -16,6 +16,3 @@ Each requirement of the assignment, and where it is addressed.
 | Enable and evaluate parallel processing options | 4.4 | 9, 10 | Tensor parallelism tp=1/2/4 and pipeline parallelism pp=2 at equal GPU count |
 | Analyse results to determine bottlenecks | 5 | 12, 13 | KV hypothesis rejected; step-level decomposition; memory-bandwidth attribution |
 | Generate figures | 4, 5 | 1–13 | Thirteen figures, all generated from measured data |
-
-<!-- P1 insert: extend the parallelism row to "tensor parallelism tp=1/2/4 and pipeline
-     parallelism pp=2" and add the new figure number. -->
