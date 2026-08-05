@@ -292,7 +292,7 @@ The efficiency of the prefill itself also depends on the input length. The effec
 **Figure 7.** ShareGPT against the random workload at matched arrival rates (Qwen2.5-7B, one GPU). Left: TTFT p95 on a logarithmic axis, where ShareGPT sits
 above random at every finite rate because its prompt-length tail reaches 767 tokens against a fixed 256. Right: output token throughput on a linear axis,
 where the ordering reverses above rate 5 — ShareGPT generates 191.6 output tokens per request on average against a fixed 128, so the two workloads do not
-present the same amount of work at the same arrival rate. The random series shown here is S2; The random series shown here is S2. The extension to 20 req/s (S2b) uses a rate grid the ShareGPT series does not cover, so it is reported in the text rather than plotted.
+present the same amount of work at the same arrival rate. The random series shown here is S2; The extension to 20 req/s (S2b) uses a rate grid the ShareGPT series does not cover, so it is reported in the text rather than plotted.
 
 ![](../figures/fig06_model_comparison.png)
 
@@ -415,7 +415,7 @@ This pattern changes after partitioning. At tp = 4, because the fixed cost is re
 
 **Pipeline parallelism does not touch this quantity.** Splitting the model by stages leaves every weight on exactly one GPU, so each device still streams its own share once per step and the aggregate weight traffic per token is unchanged. The measurement matches: pp = 2 changes mean decode time by −1.7 %, within the tolerance for this comparison (§3.5), while tp = 2 on the same two devices cuts it by 28.5 % (§4.4). Prefill behaves differently only because a prefill step carries many tokens, which can be handed from stage 0 to stage 1 while the next group is still being processed; that overlap is what produces the 10.4 % reduction in mean prefill time under pp = 2. Decode admits no such overlap, since one step produces one token per request and the two stages must run in series.
 
-In summary, tensor parallelism alleviates the amount of weight streaming per GPU and is effective only when that is the rate-limiting factor. Decoding satisfies this condition with small batches, while prefill does not. Decoding also ceases to meet this condition as the batch size increases. As shown in §4.2, decoding accounts for 98.7 % of the request time, so this mechanism governs the overall throughput.
+In summary, tensor parallelism reduces the weight streaming each GPU performs, and is effective only where that streaming is the rate-limiting factor; pipeline parallelism leaves it untouched and gains only where stages can overlap. Decoding satisfies this condition with small batches, while prefill does not. Decoding also ceases to meet this condition as the batch size increases. As shown in §4.2, decoding accounts for 98.7 % of the request time, so this mechanism governs the overall throughput.
 
 ### 5.4 Sublinear scaling and topology
 
@@ -442,15 +442,7 @@ Memory-controller utilization is symmetric within each configuration (39.5 / 39.
 
 ![](../figures/fig09_resources_vs_rate.png)
 
-**Figure 12.** **Figure 12.** Resource utilization against arrival rate (Qwen2.5-7B, ShareGPT,
-one GPU). Left: GPU counters from pynvml — SM utilization is the fraction of
-time any kernel was resident, memory-controller utilization the fraction of time
-the controller was busy, so the gap between the two curves is what identifies
-the bandwidth-bound regime of §5.3. Right: per-process CPU from psutil, in
-percent of a single core, so values above 100 % mean one process spanning more
-than one core. Samples are taken at 1 Hz and averaged over the measured section
-of each run, excluding start-up and warm-up (§3.4); the annotation converts the
-server peak into a share of the container's allocation.
+**Figure 12.** Resource utilization against arrival rate for the two model sizes (ShareGPT, one GPU). Left: GPU counters from pynvml — SM utilization is the fraction of time any kernel was resident, memory-controller utilization the fraction of time the controller was busy. The 7B curves sit near saturation on the memory controller while the 0.5B curves leave both counters below 60 %. Right: per-process CPU from psutil, in percent of a single core, so values above 100 % mean one process spanning more than one core. The two panels cross: moving from 7B to 0.5B lowers the GPU counters and raises the CPU curve. The models are swept over different rate grids ({1…8} and {1…32} req/s, §3.3), so they overlap only up to rate 8. Samples are taken at 1 Hz and averaged over the measured section of each run, excluding start-up and warm-up (§3.4).
 
 <!-- The 0.5B model reaches a framework-bound regime (D27). Per-process CPU from the
      resource logger. This is where the task's "Document CPU performance" is answered. -->
@@ -482,6 +474,26 @@ This result matches the observation in §4.2, where 48–71 % of the client-obse
   - rate=inf is not a continuation of the finite-rate series
   - a single GPU model (A40) and a single model family (Qwen2.5)
 -->
+
+**Measurement conditions.** Every tensor-parallel measurement was taken with NCCL peer-to-peer transport and the custom all-reduce kernel disabled (§3.3, D43). Both mechanisms lower communication cost, so the reported gains (+32.5 % at rate 8) are conservative lower bounds and the diminishing return observed in §5.4 may be stronger than what this hardware could achieve. The test host has no NVLink; inter-GPU paths are limited to PXB and SYS. On an NVLink system the relative standing of tensor and pipeline parallelism could differ.
+
+**Assumptions in the residual decomposition.** The residual reported in §5.4 (10.43 ms at tp = 1, 12.49 ms at tp = 4) is obtained by subtracting a weight-transfer time computed from the A40's theoretical peak bandwidth of 696 GB/s. Effective bandwidth is lower, so both the absolute residual and its 19.7 % growth depend on that assumption; an effective bandwidth 10 % below peak puts the growth above 50 %. The residual is also not a measurement of communication — it collects attention computation, kernel launches, and framework overhead as well. The increment is consistent with the added all-reduce but has not been isolated from the rest.
+
+**Cross-session comparison.** The A1 anchor ties Sessions A through C to within 0.97 %, but Session D (P1) carries no anchor. A working tolerance of ±3 % was derived from a single 20-request tp = 1 boot warm-up (§3.5). Differences smaller than that tolerance are not interpreted.
+
+**Asymmetry in scheduler time.** Per-step scheduling time is 0.848 ms at tp = 1 against roughly 0.22 ms at tp ≥ 2. The difference is presumably an artifact of how worker processes are arranged, but this was not established by measurement. At 0.6 ms against a 32 ms step it could inflate the tp = 2 gain (+32.5 %) by about 2 %. The direction of the conclusion is unaffected, but the gain is overstated by that margin.
+
+**Statistical power.** The C1 control (instrumentation on versus off) used three seed pairs, so the paired t-test has two degrees of freedom and the smallest p-value is 0.125 (§3.5). What the control supports is an upper bound — roughly 3 % on latency and 0.3 % on throughput — not a detection of the effect.
+
+**Workload constraints.** The harness sampler truncates prompts at 1,024 tokens, so the realised ShareGPT distribution lacks the tail of the nominal one: a nominal maximum of 66,076 tokens against a realised maximum of 1,010 (§3.2). The claim of a realistic conversational workload holds only within that bound. Long-context behaviour was not measured.
+
+**Seed dependence from the output-length tail.** ShareGPT's realised output lengths have a p95/p50 ratio of 5.8. Under offline conditions a run ends when its longest request completes, so achieved throughput varies by 41 % across seeds (§3.2). Capacity is therefore not derived from rate = ∞ but from the shape of the closed-loop curve.
+
+**One failed run.** G1 at rate 1, repetition 1 returned 199 of 200 completions and was recorded as a failure. It was not re-run, so that single point rests on two repetitions rather than three. The other 231 runs all completed.
+
+**The offline point.** Rate = ∞ is not a continuation of the finite-rate series. It is a burst transient in which 200 requests are submitted at once, and the TTFT p50 of 3,553 ms is not a saturation failure (§4.1). The two cannot be read as a single curve.
+
+**Scope of generalization.** The measurements cover one GPU model (A40 48GB), one model family (Qwen2.5 at 7B and 0.5B), and two datasets. Extrapolation to other architectures, precisions, or sequence-length distributions lies outside what was measured.
 
 ---
 
