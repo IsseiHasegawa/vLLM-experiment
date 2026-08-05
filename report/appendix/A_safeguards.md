@@ -9,9 +9,12 @@ explicitly disabled for every run, and the instrumentation patch logs the select
 once at server startup, so that the choice is recorded rather than assumed. All runs in
 Sessions A-C followed the `step` path.
 
-<!-- P1 insert: pipeline parallelism (pp>1) forces the `step_with_batch_queue` path.
-     If the P1 session is included, state here that its step-axis data is therefore not
-     comparable with the tp series, and that the P1 analysis uses request-axis metrics only. -->
+Pipeline parallelism is the documented exception: pp > 1 requires the
+`step_with_batch_queue` path, so the instrumented step function is never called and
+Session D produces no step-axis log. The startup log records this path selection for
+the Session D boot, so the exception is itself measured rather than assumed. The P1
+analysis therefore rests on request-axis metrics only, and the step-level
+decomposition of §5.2 covers the tensor-parallel series alone.
 
 **Statistics left enabled.** The `--disable-log-stats` flag was not used. Phase timestamps
 are carried as `EngineCoreEvents`; disabling statistics would remove the very quantities
