@@ -3,3 +3,4 @@ __pycache__/
 .venv/
 .DS_Store
 report_debug.zip
+ShareGPT_V3_unfiltered_cleaned_split.json
