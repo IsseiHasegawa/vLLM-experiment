@@ -23,8 +23,6 @@ Three findings follow from the separation. First, load does not appear where an 
 
 The limiting resource is not fixed. On the 7B model the memory controller saturates while the server process uses under half a core; on the 0.5B model the GPU sits half idle while that process exceeds 141 % of one core. For small models the serving layer, not the model, sets the limit.
 
----
-
 ## 1. Introduction
 
 <!-- BUDGET 0.8p. Write after section 5 is finished. -->
@@ -34,8 +32,6 @@ The limiting resource is not fixed. On the 7B model the memory controller satura
 <!-- Paragraph 2: what this report does. 208 runs, 3 sessions, instrumented fork. -->
 
 <!-- Paragraph 3: the research questions. These map 1:1 onto 4.1-4.4 and onto section 7. -->
-
-## 1. Introduction
 
 Inference with a large language model consists of two phases of different character: prefill, which processes the entire prompt at once, and decode, which produces one token per step. The distinction has become a premise of recent serving-system design, to the point that some systems place the two phases on separate device pools [@Zhong2024; @Patel2024]. What an operator sees, however, is an aggregate — a TTFT figure, a throughput number. When an aggregate degrades, nothing in it distinguishes a prefill problem from a decode problem, or either from a fixed cost in the serving layer that is not phase computation at all. Measuring per phase removes that ambiguity. And if the two phases are limited by different resources, then which remedy applies — adding GPUs, using a smaller model, changing the parallelism strategy — cannot be decided without separating them.
 
@@ -48,8 +44,6 @@ This report forks vLLM, adds instrumentation to three files, and reports 232 mea
 **RQ3.** How large is the gain from additional GPUs and parallelism strategy, and to which phase is that gain attributable?
 
 **RQ4.** Which resource determines the limits observed above?
-
----
 
 ## 2. Background & Related Work
 
@@ -79,8 +73,6 @@ Client-side metrics map onto the phases, though not exactly. TTFT (time to first
 Since Orca introduced continuous batching [@Yu2022], work on LLM serving has been concerned with holding throughput and latency together. vLLM [@Kwon2023] recast KV cache management as a virtual-memory problem and is the system measured here. Sarathi-Serve [@Agrawal2024a] addressed prefill stalling decode through chunked prefill and decode-maximal batching. DistServe [@Zhong2024] and Splitwise [@Patel2024] go further still and place the two phases on separate device pools. All of these accept the phase asymmetry as a design premise, but none takes as its subject the question of which resource that asymmetry comes from on a running server. On the parallelism side, Megatron-LM [@Shoeybi2019] established tensor parallelism and GPipe [@Huang2019] pipeline parallelism; both target training, and the phase-level effect of each at inference time is what this report measures. For classifying bottlenecks, the roofline model [@Williams2009] is the standard tool, and Yuan et al. [@Yuan2024] apply it layer by layer to LLM inference. On the evaluation side, Schroeder et al. [@Schroeder2006] showed that open-loop and closed-loop workload generation produce fundamentally different behaviour, and Etalon [@Agrawal2024b] systematizes metrics for LLM serving. From the Yu group, HACK [@Zhang2025] accelerates disaggregated inference by compressing the KV cache, and Jiang et al. [@Jiang2025] orchestrate reasoning branches within a request.
 
 What this report addresses instead is the measurement itself. To our knowledge, no prior work records phase-level latency and resource utilization end to end across all five factors — arrival rate, dataset, model size, GPU count and parallelism strategy — on a single instrumented build. The effect of each individual mechanism has been established; what has not been done is to place them on one instrumentation and separate, phase by phase, which resource sets the limit.
-
----
 
 ## 3. Methodology
 
@@ -377,8 +369,6 @@ By examining the marginal gains for each interval, we can identify the point at 
 
 **Structure of variance.** The variances along the two axes are inversely correlated. At a concurrency level of 1, the coefficient of variation for output throughput is 0.4 %, whereas that for p95 latency is 20.6 %. At a concurrency level of 128, these figures reverse to 12.9 % and 6.8 %, respectively. This asymmetry also stems from the measurement conditions. The runs used 60 requests at concurrency 1 and 2, 120 at 4 and 8, and 200 at 16 and above (§3.3), so the lower the concurrency, the fewer samples determine the p95. This is why error bars are plotted on both axes in Figure 10; showing only one axis would obscure either the uncertainty at low concurrency or that at high concurrency.
 
----
-
 ## 5. Bottleneck Analysis
 
 <!-- BUDGET 1.2p. REASONS. This section carries the originality of the report.
@@ -481,8 +471,6 @@ The analysis so far has concerned the 7B model. With the 0.5B model, the limitin
 
 This result matches the observation in §4.2, where 48–71 % of the client-observed TTFT for the 0.5B model fell outside prefill computation, with the proportion rising with the arrival rate. The CPU-side work measured here is what occupies that interval. For small models, the serving layer determines performance more than the model itself.
 
----
-
 ## 6. Threats to Validity
 
 <!-- BUDGET 0.4p. A plain list. Honesty here is worth more than polish. -->
@@ -517,8 +505,6 @@ This result matches the observation in §4.2, where 48–71 % of the client-obse
 
 **Scope of generalization.** The measurements cover one GPU model (A40 48GB), one model family (Qwen2.5 at 7B and 0.5B), and two datasets. Extrapolation to other architectures, precisions, or sequence-length distributions lies outside what was measured.
 
----
-
 ## 7. Conclusion
 
 <!-- BUDGET 0.3p. One short paragraph per RQ, answering it directly.
@@ -528,8 +514,6 @@ This result matches the observation in §4.2, where 48–71 % of the client-obse
      "Pipeline parallelism was outside the scope of this measurement; because layer-wise
      and tensor-wise partitioning differ in the frequency and granularity of inter-GPU
      communication, a like-for-like comparison at equal GPU count remains future work." -->
-
-## 7. Conclusion
 
 **RQ1 — arrival rate and capacity.** Multiplying the arrival rate eightfold, from 1 to 8 req/s, raises TTFT p50 only 1.6-fold, from 76 ms to 124 ms. The increase appears in the tail rather than the median: ITL p95 grows 2.8-fold while its p50 barely moves. Queue dwell time stayed below 0.02 ms at every rate, because vLLM admits arriving requests directly into the running batch, so load registers as batch growth rather than queue length. That structure makes achieved throughput a weak indicator of saturation — its value depends on which definition is used, and it does not flatten within the finite grid. Capacity was therefore estimated from the closed-loop measurement instead. Raising the concurrency limit, the trade-off comes into balance between 32 and 64, and from 64 to 128 throughput gains only 0.9 % while latency costs 5.4 %. The ceiling is 711 tok/s, or roughly 3.7 req/s at this workload's mean output length of 191.6 tokens.
 
