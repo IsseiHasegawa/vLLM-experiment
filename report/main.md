@@ -29,6 +29,12 @@ Contents: what was measured, three headline numbers, one-sentence conclusion. --
 
 <!-- Paragraph 3: the research questions. These map 1:1 onto 4.1-4.4 and onto section 7. -->
 
+## 1. Introduction
+
+Inference with a large language model consists of two phases of different character: prefill, which processes the entire prompt at once, and decode, which produces one token per step. The distinction has become a premise of recent serving-system design, to the point that some systems place the two phases on separate device pools [@Zhong2024; @Patel2024]. What an operator sees, however, is an aggregate — a TTFT figure, a throughput number. When an aggregate degrades, nothing in it distinguishes a prefill problem from a decode problem, or either from a fixed cost in the serving layer that is not phase computation at all. Measuring per phase removes that ambiguity. And if the two phases are limited by different resources, then which remedy applies — adding GPUs, using a smaller model, changing the parallelism strategy — cannot be decided without separating them.
+
+This report forks vLLM, adds instrumentation to three files, and reports 232 measured runs on the resulting build. The instrumentation does not introduce a new timer: it writes out the per-phase timestamps that vLLM V1 already computes internally, as JSONL. It records the request axis and the step axis independently, and samples GPU counters and per-process CPU once per second from outside the server process. A phase is an attribute of a request while a step is a batch that mixes both phases, so neither axis alone can separate time and resource usage by phase. The measurements span four sessions and cross five factors: arrival rate, dataset, model size, GPU count and parallelism strategy. Every condition was repeated three times with a seed set held common across conditions. The comparability of measurements taken in different sessions was checked with an anchor condition, and the cost of the instrumentation itself was bounded by a control experiment.
+
 **RQ1.** As the request arrival rate increases, how do per-phase latency and throughput change, and where and in what form does the capacity limit appear?
 
 **RQ2.** How do workload characteristics (dataset, input/output ratio) and model size change capacity and phase composition?
