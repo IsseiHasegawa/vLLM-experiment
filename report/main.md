@@ -83,7 +83,7 @@ The design of the instrumentation is not to build a new timer, but to write out 
 The core of this design lies in dividing the instrumentation into two axes. In vLLM V1, chunked prefill is always enabled, and a single engine step contains a mix of requests undergoing prefill and requests undergoing decoding. In other words, phase refers to a request attribute, while step refers to a batch containing a mix of both phases. Since the two have different levels of granularity, relying on only one of them would not allow time and resource usage to be separated by phase. Therefore, we adopted a three-layer architecture that independently logs the request and step axes and samples resources from outside the process at 1 Hz (Figure 1).
 
 | Layer | Output | Fields |
-|:------------|:-----------------|:----------------------------------------------------------------------|
+|:---------------|:----------------|:-------------------------------------------------------------|
 | Request axis | `requests.jsonl` | `queued_s`, `prefill_s`, `decode_s`, `inference_s`, `e2e_s`, `n_prompt`, `n_gen`, `n_cached` |
 | Step axis | `steps.jsonl` | `sched_s`, `exec_s`, `n_ctx_reqs`, `n_ctx_toks`, `n_gen_reqs`, `n_gen_toks`, `n_running`, `n_waiting`, `kv_usage` |
 | Resource | external logger | SM utilisation, memory-controller utilisation, VRAM, power (pynvml); per-process CPU utilisation for the server and the benchmark client (psutil) |
@@ -122,10 +122,10 @@ curves at 1,024 tokens is caused by the benchmark harness sampler, which does
 not admit longer prompts. The random workload is fixed-length and therefore renders as a vertical step in the CDF.
 
 | Dataset | Source | Input p50 | p95 | max |
-|:-------------|:--------------------------------|----------:|----:|------:|
+|:---------|:-----------------------------------|----------:|------:|-------:|
 | ShareGPT | nominal (source file, n=5,000) | 145 | 938 | 66,076 |
 | ShareGPT | realised (S1 phase logs, n=4,800) | 136 | 767 | 1,010 |
-| random (S2 default) | nominal = realised (fixed) | 256 | 256 | 256 |
+| random | S2 default; nominal = realised | 256 | 256 | 256 |
 
 : Prompt-length distributions, nominal versus realised.
 
@@ -141,17 +141,17 @@ A total of 232 runs were executed; 231 completed successfully and form the datas
 
 The table below shows the main groups and the variables each group controls.
 
-| Group | Model | Dataset | GPUs | Varied | Runs analysed |
-|:-------------|:------|:---------|:----------|:-------------------------|-----:|
+| Group | Model | Dataset | GPUs | Varied | Runs |
+|:-----------|:------|:---------|:------|:--------------------------|--------:|
 | S1 | 7B | ShareGPT | 1 | arrival rate | 24 |
 | P1 | 7B | ShareGPT | 2 | pipeline parallelism (pp=2) | 24 |
 | S2 | 7B | random | 1 | arrival rate | 24 |
 | S2b | 7B | random | 1 | arrival rate, extended | 15 |
 | P0 | 0.5B | ShareGPT | 1 | offline capacity probe | 1 |
 | S3 | 0.5B | ShareGPT | 1 | arrival rate | 27 |
-| I1 / I2 | 7B | random | 1 | input/output ratio | 3 / 3 |
-| G1 / G2 / G4 | 7B | ShareGPT | 1 / 2 / 4 | GPU count, tp | 23 / 24 / 24 |
-| C2 / C2x | 7B | ShareGPT | 1 | concurrency, closed loop | 21 / 3 |
+| I1/I2 | 7B | random | 1 | input/output ratio | 3/3 |
+| G1/G2/G4 | 7B | ShareGPT | 1/2/4 | GPU count, tp | 23/24/24 |
+| C2/C2x | 7B | ShareGPT | 1 | concurrency, closed loop | 21/3 |
 | C1off | 7B | ShareGPT | 1 | instrumentation on/off | 3 |
 | A1a–A1d | 7B | ShareGPT | 1 | anchor across sessions | 12 |
 
