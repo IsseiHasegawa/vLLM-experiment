@@ -507,11 +507,6 @@ This result matches the observation in §4.2, where 48–71 % of the client-obse
 <!-- BUDGET 0.3p. One short paragraph per RQ, answering it directly.
      No new numbers that have not appeared above. -->
 
-<!-- P1 insert: if pp=2 was NOT executed, add exactly one future-work sentence:
-     "Pipeline parallelism was outside the scope of this measurement; because layer-wise
-     and tensor-wise partitioning differ in the frequency and granularity of inter-GPU
-     communication, a like-for-like comparison at equal GPU count remains future work." -->
-
 **RQ1 — arrival rate and capacity.** Multiplying the arrival rate eightfold, from 1 to 8 req/s, raises TTFT p50 only 1.6-fold, from 76 ms to 120 ms. The increase appears in the tail rather than the median: ITL p95 grows 2.8-fold while its p50 barely moves. Queue dwell time stayed below 0.02 ms at every rate, because vLLM admits arriving requests directly into the running batch, so load registers as batch growth rather than queue length. That structure makes achieved throughput a weak indicator of saturation — its value depends on which definition is used, and it does not flatten within the finite grid. Capacity was therefore estimated from the closed-loop measurement instead. Raising the concurrency limit, the trade-off comes into balance between 32 and 64, and from 64 to 128 throughput gains only 0.9 % while latency costs 5.4 %. The ceiling is 711 tok/s, or roughly 3.7 req/s at this workload's mean output length of 191.6 tokens.
 
 **RQ2 — workload and model size.** Changing the prompt-length distribution alone moves the sustainable load by more than a factor of three: random does not saturate even at 20 req/s, while ShareGPT tops out near 3.7 req/s. The comparison depends on the metric, however. Inverting the input-to-output ratio on the same server makes I1 35 % higher in total token throughput and I2 3.0 times higher in output token throughput — opposite conclusions from the same measurement. Phase composition is stable across workloads: prefill accounted for between 0.30 % and 1.94 % of end-to-end time in every condition. The effect of model size is phase-dependent. Between 7B and 0.5B, a 14:1 difference in parameter count, TPOT differs by 5.8× while TTFT differs by only 2.9×, because TTFT carries a fixed cost outside computation that reaches 48–71 % on the 0.5B model.
