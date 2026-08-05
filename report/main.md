@@ -81,7 +81,7 @@ What this report addresses instead is the measurement itself. To our knowledge, 
 ### 3.1 Instrumentation
 For this measurement, we forked vLLM from GitHub (vllm-project/vllm, base commit 702f4814), made changes to three files totaling approximately 190 lines on the instrumentation branch, and then built it using an editable install from the source. Inference paths have never been changed except for instrumentation. The main purpose of this research is not optimization but measurement. All of these changes are intended to make the internal time readable from the outside. The fork, the instrumentation commit (019e5d1), and the buffered-flush commit (d4e0675) are available at github.com/IsseiHasegawa/vllm.
 
-The design of Instrumentation is not to  build a new timer, but to write out the value that vLLM V1 has already calculated. The V1 metrics layer retains the times for queuing, prefilling, and decoding for each request at the time FinishedRequestStats is constructed. By adopting an approach that outputs this data directly to JSONL without recalculating it, we minimized the risk of introducing bugs through custom code and, at the same time, enabled cross-validation with the Prometheus histograms published by vLLM itself.
+The design of the instrumentation is not to build a new timer, but to write out the value that vLLM V1 has already calculated. The V1 metrics layer retains the times for queuing, prefilling, and decoding for each request at the time FinishedRequestStats is constructed. By adopting an approach that outputs this data directly to JSONL without recalculating it, we minimized the risk of introducing bugs through custom code and, at the same time, enabled cross-validation with the Prometheus histograms published by vLLM itself.
 
 The core of this design lies in dividing the instrumentation into two axes. In vLLM V1, chunked prefill is always enabled, and a single engine step contains a mix of requests undergoing prefill and requests undergoing decoding. In other words, phase refers to a request attribute, while step refers to a batch containing a mix of both phases. Since the two have different levels of granularity, relying on only one of them would not allow time and resource usage to be separated by phase. Therefore, we adopted a three-layer architecture that independently logs the request and step axes and samples resources from outside the process at 1 Hz (Figure 1).
 
@@ -122,7 +122,7 @@ The nominal and realised distributions differ substantially. The harness sampler
 (log x-axis). Solid lines are realised values taken from the phase logs; dashed
 lines are nominal values from the source file. The divergence of the two ShareGPT
 curves at 1,024 tokens is caused by the benchmark harness sampler, which does
-not admit longer prompts. The random workload is fixed-length and therefore steps.
+not admit longer prompts. The random workload is fixed-length and therefore renders as a vertical step in the CDF.
 
 | Dataset | Source | Input p50 | p95 | max |
 |:-------------|:--------------------------------|----------:|----:|------:|
@@ -306,7 +306,7 @@ The efficiency of the prefill itself also depends on the input length. The effec
 **Figure 7.** ShareGPT against the random workload at matched arrival rates (Qwen2.5-7B, one GPU). Left: TTFT p95 on a logarithmic axis, where ShareGPT sits
 above random at every finite rate because its prompt-length tail reaches 767 tokens against a fixed 256. Right: output token throughput on a linear axis,
 where the ordering reverses above rate 5 — ShareGPT generates 191.6 output tokens per request on average against a fixed 128, so the two workloads do not
-present the same amount of work at the same arrival rate. The random series shown here is S2; The extension to 20 req/s (S2b) uses a rate grid the ShareGPT series does not cover, so it is reported in the text rather than plotted.
+present the same amount of work at the same arrival rate. The random series shown here is S2. The extension to 20 req/s (S2b) uses a rate grid the ShareGPT series does not cover, so it is reported in the text rather than plotted.
 
 ![](../figures/fig06_model_comparison.png)
 
