@@ -267,7 +267,7 @@ def fig10(runs, outdir):
 
     xs, ys, exs, eys, labels = curve(c2)
 
-    fig, ax = plt.subplots(figsize=(5.8, 4.0))
+    fig, ax = plt.subplots(figsize=(7.0, 2.8))
 
     # Error bars on both axes. The two are anti-correlated and the pair is a
     # result in itself: at concurrency 1 the throughput spread is 0.4 % but the
