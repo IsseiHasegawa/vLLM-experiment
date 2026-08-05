@@ -8,7 +8,6 @@ TARGET: 6-8 pages. Budget per section is noted in each heading comment.
 FIGURE NUMBERING is by document order, not by filename. Source file is noted at each slot.
 MARKERS (written without comment delimiters here, since HTML comments cannot nest):
   `TODO` = must fix before submission
-  `P1 insert` = add only if the pp=2 session is executed; delete the marker otherwise
 WRITING ORDER: 3 -> 4 -> 5 -> 6 -> 1 -> Abstract -> 2
 -->
 
@@ -28,8 +27,6 @@ The limiting resource is not fixed. On the 7B model the memory controller satura
 <!-- BUDGET 0.8p. Write after section 5 is finished. -->
 
 <!-- Paragraph 1: why serving-system performance is measured per phase at all. -->
-
-<!-- Paragraph 2: what this report does. 208 runs, 3 sessions, instrumented fork. -->
 
 <!-- Paragraph 3: the research questions. These map 1:1 onto 4.1-4.4 and onto section 7. -->
 
