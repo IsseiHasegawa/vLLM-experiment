@@ -231,6 +231,8 @@ it belongs in section 5. Check this before committing the section. -->
 
 <!-- BUDGET 0.8p. Answers RQ1. -->
 
+Within the finite-rate range, the client is able to send requests at the specified rate. The actual arrival rate, measured from the arrival timestamps, ranges from 1.00 to 8.03 req/s for requested rates of 1 to 8 req/s, confirming that the load was applied correctly.
+
 ![](../figures/fig01_ttft_vs_rate.png)
 
 **Figure 3.** Time to first token against arrival rate (Qwen2.5-7B, ShareGPT, one
@@ -241,6 +243,8 @@ point (rate = ∞) sits to the right of the dotted rule and is not a continuatio
 of the finite-rate series: it is a burst transient in which all 200 requests are
 submitted at once, two orders of magnitude above the finite-rate values (§4.1).
 
+**Latency.** TTFT increases monotonically with the arrival rate, but the rate of increase is gradual. The p50 increases from 76 ms to 120 ms, and the p95 from 151 ms to 245 ms — an increase of only about 1.6 times as the rate is multiplied by 8 (Figure 3). The same pattern is observed on the decoding side, where TPOT p50 ranges from 33.0 ms to 44.2 ms, and p95 from 34.8 ms to 57.8 ms (Figure 4). On the other hand, only the p95 of inter-token latency (ITL) increases 2.8-fold, from 34.3 ms to 95.0 ms, in contrast to the p50, which remains virtually unchanged at 32.4 ms to 35.6 ms. Median tokens arrive stably even under high load, while only a small number of tokens experience significant delays.
+
 ![](../figures/fig02_decode_latency_vs_rate.png)
 
 **Figure 4.** Decode-side latency against arrival rate (same runs as Figure 3),
@@ -249,6 +253,10 @@ request's whole generation. Right: inter-token latency, which resolves the
 individual gaps between tokens. The p50 of the two panels tracks closely while
 the p95 diverges, so the tail is a property of individual token gaps rather than
 of whole requests.
+
+**Queuing.** The queue dwell time recorded by the instrumentation averaged between 0.018 and 0.021 ms at every finite rate, with a maximum of 0.08 ms — three to four orders of magnitude below TTFT. This does not mean that queues do not exist; rather, it is because vLLM immediately accepts incoming requests into the currently executing batch. Load is reflected in batch size rather than queue length. The average number of requests included in steps that perform only decoding increases from 6.0 at rate 1 to 18.8 at rate 4 and 23.0 at rate 8, with the maximum expanding from 14 to 76. Backlog accumulates within batches rather than in the queue.
+
+**Throughput.** Achieved throughput does not reach a clear plateau within the finite grid: by the client's definition it still rises 5.0 % from rate 6 to rate 8, ending at 3.54 req/s (Figure 5, left). This value also depends on the definition used. The client-reported "completed / measured duration" includes the time until the last request completes in its denominator, so even at rate 1 it falls below 1 at 0.95 req/s. Excluding the drain, "completed / arrival window" reaches 5.2 req/s at rate 8. Neither metric is unbiased (§3.4), so the saturation point cannot be determined from this curve alone. Output token throughput increases from 181 to 675 tok/s, with the per-step gain falling to 5 % above rate 5 (Figure 5, right). The ceiling is better read from the closed-loop measurement, where output throughput tops out at 711 tok/s at concurrency 64 and gains only 0.9 % more at concurrency 128 (§4.5). At the mean output length of this workload (191.6 tokens per request) that ceiling corresponds to roughly 3.7 req/s, which is consistent with the open-loop series still climbing at rate 8.
 
 ![](../figures/fig03_throughput_vs_rate.png)
 
@@ -261,14 +269,6 @@ curve is unbiased, and the gap between them is the reason saturation is argued
 from latency and from the closed loop instead. Right: output and total token
 throughput, the latter counting prompt tokens as well.
 
-Within the finite-rate range, the client is able to send requests at the specified rate. The actual arrival rate, measured from the arrival timestamps, ranges from 1.00 to 8.03 req/s for requested rates of 1 to 8 req/s, confirming that the load was applied correctly.
-
-**Latency.** TTFT increases monotonically with the arrival rate, but the rate of increase is gradual. The p50 increases from 76 ms to 120 ms, and the p95 from 151 ms to 245 ms — an increase of only about 1.6 times as the rate is multiplied by 8 (Figure 3). The same pattern is observed on the decoding side, where TPOT p50 ranges from 33.0 ms to 44.2 ms, and p95 from 34.8 ms to 57.8 ms (Figure 4). On the other hand, only the p95 of inter-token latency (ITL) increases 2.8-fold, from 34.3 ms to 95.0 ms, in contrast to the p50, which remains virtually unchanged at 32.4 ms to 35.6 ms. Median tokens arrive stably even under high load, while only a small number of tokens experience significant delays.
-
-**Queuing.** The queue dwell time recorded by the instrumentation averaged between 0.018 and 0.021 ms at every finite rate, with a maximum of 0.08 ms — three to four orders of magnitude below TTFT. This does not mean that queues do not exist; rather, it is because vLLM immediately accepts incoming requests into the currently executing batch. Load is reflected in batch size rather than queue length. The average number of requests included in steps that perform only decoding increases from 6.0 at rate 1 to 18.8 at rate 4 and 23.0 at rate 8, with the maximum expanding from 14 to 76. Backlog accumulates within batches rather than in the queue.
-
-**Throughput.** Achieved throughput does not reach a clear plateau within the finite grid: by the client's definition it still rises 5.0 % from rate 6 to rate 8, ending at 3.54 req/s (Figure 5, left). This value also depends on the definition used. The client-reported "completed / measured duration" includes the time until the last request completes in its denominator, so even at rate 1 it falls below 1 at 0.95 req/s. Excluding the drain, "completed / arrival window" reaches 5.2 req/s at rate 8. Neither metric is unbiased (§3.4), so the saturation point cannot be determined from this curve alone. Output token throughput increases from 181 to 675 tok/s, with the per-step gain falling to 5 % above rate 5 (Figure 5, right). The ceiling is better read from the closed-loop measurement, where output throughput tops out at 711 tok/s at concurrency 64 and gains only 0.9 % more at concurrency 128 (§4.5). At the mean output length of this workload (191.6 tokens per request) that ceiling corresponds to roughly 3.7 req/s, which is consistent with the open-loop series still climbing at rate 8.
-
 **The offline point.** The point where rate = ∞ is not an extension of the finite-rate series. Under this condition, 200 requests are submitted simultaneously, resulting in a TTFT p50 of 3,553 ms and a p95 of 6,767 ms — values that differ by two orders of magnitude from those at finite rates. The average queue time also reaches 2,704 ms. This is not a failure due to saturation, but rather a transient phenomenon caused by the initial burst exceeding the batch capacity; it is not a steady-state measurement. Since the two cannot be interpreted as a single curve, they are separated by a dotted vertical line in the figure.
 
 
@@ -276,12 +276,12 @@ Within the finite-rate range, the client is able to send requests at the specifi
 
 <!-- BUDGET 0.6p. Answers RQ1 (phase part) and feeds RQ4. -->
 
+**Phase composition.** Decoding accounts for the overwhelming majority of wall-clock time per request. For ShareGPT at rate 5, out of an end-to-end average of 7,434 ms, prefill accounts for 68.8 ms (0.93 %) and decoding accounts for 7,334 ms (98.7 %). This ratio remains consistent even when the workload is changed: it is 1.94 % for I1 (input 512 / output 128), which is prefill-heavy, and 0.30 % for I2 (input 128 / output 512), which is decoding-heavy; in both cases, prefill remains below 2 % (Figure 6, left). Even when the arrival rate is increased from 1 to 8, the prefill ratio only varies from 0.86 % to 0.96 %.
+
 ![](../figures/fig08_phase_breakdown.png)
 
 **Figure 6.** Where a request's time goes, and what the client's wait is made of (Qwen2.5-7B, one GPU, rate 5). Left: mean time per request split into queue, prefill and decode for the two fixed-length workloads, from the request-axis log. Queue and prefill are labelled rather than drawn to scale, since at 0.9 ms and 126 ms against a 6.3 s decode they would be invisible; the bars are dominated by decode in both cases even though the two workloads invert the input-to-output ratio. Right: the client-observed TTFT for the same runs, split into the queue and prefill the server recorded and the remainder, which covers HTTP transfer, serialization and tokenization. Note that the two panels use different vertical scales: the left is in seconds of whole-request time, the right in milliseconds
 of first-token latency.
-
-**Phase composition.** Decoding accounts for the overwhelming majority of wall-clock time per request. For ShareGPT at rate 5, out of an end-to-end average of 7,434 ms, prefill accounts for 68.8 ms (0.93 %) and decoding accounts for 7,334 ms (98.7 %). This ratio remains consistent even when the workload is changed: it is 1.94 % for I1 (input 512 / output 128), which is prefill-heavy, and 0.30 % for I2 (input 128 / output 512), which is decoding-heavy; in both cases, prefill remains below 2 % (Figure 6, left). Even when the arrival rate is increased from 1 to 8, the prefill ratio only varies from 0.86 % to 0.96 %.
 
 **Breakdown of TTFT.** The TTFT observed by the client cannot be explained by server-side prefill computation alone. For ShareGPT at rate 5, the client-observed average TTFT is 111.6 ms, while the total of queue dwell time and prefill recorded by the instrumentation is 69.0 ms, meaning 38 % of what the client waits for falls outside prefill computation on the server (Figure 6, right). This remainder covers HTTP transfer, serialization, and tokenization. The same difference is 33 % for I1 and 45 % for I2.
 
@@ -298,6 +298,8 @@ The efficiency of the prefill itself also depends on the input length. The effec
 <!-- BUDGET 0.5p. Answers RQ2. Figures 7 and 8 may go to the appendix if space is tight;
      if so, keep the numbers in the text and reference the appendix figures. -->
 
+**The effect of prompt length distribution.** When compared at the same rate, the random workload has a lower TTFT. The p95 values are 109 ms vs. 151 ms (28 % lower) at rate 1, and 211 ms vs. 245 ms (14 % lower) at rate 8 (Figure 7, left). While prompts in the random workload are fixed at 256 tokens, ShareGPT has a tail where the p95 reaches 767 tokens (§3.2). Since the prefill workload is proportional to prompt length, this tail pushes up the p95 TTFT. The gap narrows as the load increases: from 28 % at rate 1 to 14 % at rate 8.
+
 ![](../figures/fig04_dataset_comparison.png)
 
 **Figure 7.** ShareGPT against the random workload at matched arrival rates (Qwen2.5-7B, one GPU). Left: TTFT p95 on a logarithmic axis, where ShareGPT sits
@@ -305,17 +307,15 @@ above random at every finite rate because its prompt-length tail reaches 767 tok
 where the ordering reverses above rate 5 — ShareGPT generates 191.6 output tokens per request on average against a fixed 128, so the two workloads do not
 present the same amount of work at the same arrival rate. The random series shown here is S2. The extension to 20 req/s (S2b) uses a rate grid the ShareGPT series does not cover, so it is reported in the text rather than plotted.
 
-![](../figures/fig06_model_comparison.png)
-
-**Figure 8.** Qwen2.5-7B against Qwen2.5-0.5B on ShareGPT (one GPU), with TTFT p95, TPOT p95 and output throughput on logarithmic axes. The two models are swept over different arrival-rate grids ({1…8} and {1…32} req/s, §3.3) because the 0.5B model does not saturate within the 7B grid, so the series overlap only up to rate 8; beyond that point the 0.5B curve stands alone and is not a comparison. The vertical separation differs by phase — roughly threefold on TTFT against roughly sixfold on TPOT at rate 1 — which §4.2 attributes to the load-independent cost that sits outside prefill computation.
-
-**The effect of prompt length distribution.** When compared at the same rate, the random workload has a lower TTFT. The p95 values are 109 ms vs. 151 ms (28 % lower) at rate 1, and 211 ms vs. 245 ms (14 % lower) at rate 8 (Figure 7, left). While prompts in the random workload are fixed at 256 tokens, ShareGPT has a tail where the p95 reaches 767 tokens (§3.2). Since the prefill workload is proportional to prompt length, this tail pushes up the p95 TTFT. The gap narrows as the load increases: from 28 % at rate 1 to 14 % at rate 8.
-
 The rankings reverse for output token throughput. ShareGPT outperforms random up to rate 5 (612 vs. 580 tok/s), but random overtakes ShareGPT at rate 8 (675 vs. 874 tok/s). ShareGPT's average output length is 191.6 tokens, while random has a fixed output length of 128 tokens; thus, even at the same arrival rate, the amount of tokens to be generated differs. Consequently, comparing throughput across datasets cannot be done simply by standardizing the rate.
 
 **Difference in capacity.** Since random did not reach saturation on the initial grid (maximum 8 req/s), the grid was extended to 20 req/s in S2b. The achieved throughput continues to increase even at rate 20, reaching 12.10 req/s with an output of 1,549 tok/s, and shows a 12 % increase in the range from rate 16 to 20. Saturation manifests in latency rather than throughput. TPOT p95 jumps from 50.5 ms at rate 8 to 85.1 ms at rate 12, and subsequently plateaus at 97–100 ms. These rates lie beyond the grid shown in Figure 7, which covers the two workloads only where they overlap. Even with the same 7B model and the same GPU, simply changing the prompt length distribution can alter the sustainable load by more than threefold.
 
 **The impact of model size varies by phase.** At rate 1, TTFT p95 is 52 ms for the 0.5B model compared to 151 ms for the 7B model — a 2.9-fold difference — while TPOT p95 is 6.1 ms versus 34.8 ms — a 5.8-fold difference (Figure 8). Since the ratio of parameter counts is 14:1, neither ratio matches it, but the degree of divergence varies significantly between phases. As shown in §4.2, for the 0.5B model, 48–71 % of client TTFT lies outside the prefill computation, whereas decode carries no comparable fixed component. §5.5 relates this to the phase-dependent ratios above.
+
+![](../figures/fig06_model_comparison.png)
+
+**Figure 8.** Qwen2.5-7B against Qwen2.5-0.5B on ShareGPT (one GPU), with TTFT p95, TPOT p95 and output throughput on logarithmic axes. The two models are swept over different arrival-rate grids ({1…8} and {1…32} req/s, §3.3) because the 0.5B model does not saturate within the 7B grid, so the series overlap only up to rate 8; beyond that point the 0.5B curve stands alone and is not a comparison. The vertical separation differs by phase — roughly threefold on TTFT against roughly sixfold on TPOT at rate 1 — which §4.2 attributes to the load-independent cost that sits outside prefill computation.
 
 **The response to load also differs.** The p95 TTFT for 0.5B remains nearly flat at 51–53 ms from rates 1 to 8, in contrast to 7B, which rises from 151 ms to 245 ms. 0.5B begins to respond to load at rate 12 and beyond, increasing from 59 ms to 78 ms (rate 32). Since the two models were measured at different arrival rate grids (§3.3), the results up to rate 8 should be interpreted as a comparison under the same load, while those beyond that point should be interpreted as the behavior of the 0.5B model alone. The peak output throughput is 675 tok/s for the 7B at rate 8 and 3,371 tok/s for the 0.5B at rate 32, a difference of 5.0 times.
 
@@ -323,11 +323,11 @@ The rankings reverse for output token throughput. ShareGPT outperforms random up
 
 <!-- BUDGET 0.6p. Answers RQ3. -->
 
+**Tensor parallelism.** Increasing the number of GPUs to two improves achieved throughput by 32.5 % at rate 8 and 44.0 % at rate ∞ (Figure 9). With four GPUs, the improvements are 52.0 % at rate 8 and 55.4 % at rate ∞; however, the incremental gains from two to four GPUs are limited to 14.7 % and 7.9 %, respectively, indicating a clear diminishing return. In terms of processing capacity per GPU, tp = 1 yields 3.51 req/s, while tp = 2 yields 2.33 req/s (66 %) and tp = 4 yields 1.34 req/s (38 %). G1, G2, and G4 were measured on the same instance (§3.3), and in a comparison with matched seeds, the gains for tp = 2 at rate 8 were +38.7 %, +26.1 %, and +34.2 % — all three seeds clearly positive. Note that these values were measured with NCCL peer-to-peer transfers and the custom all-reduce kernel disabled (§3.3) and represent the lower bound of achievable gains.
+
 ![](../figures/fig07_gpu_count_comparison.png)
 
 **Figure 9.** TTFT p95, TPOT p95 and output throughput against arrival rate for one, two and four GPUs (7B, ShareGPT). All three series were measured on one 4×A40 instance, so host differences cannot contribute. Every tensor-parallel figure in this section was obtained with NCCL peer-to-peer transport and the custom all-reduce kernel disabled (§3.3); these are therefore conservative lower bounds on the achievable gain.
-
-**Tensor parallelism.** Increasing the number of GPUs to two improves achieved throughput by 32.5 % at rate 8 and 44.0 % at rate ∞. With four GPUs, the improvements are 52.0 % at rate 8 and 55.4 % at rate ∞; however, the incremental gains from two to four GPUs are limited to 14.7 % and 7.9 %, respectively, indicating a clear diminishing return. In terms of processing capacity per GPU, tp = 1 yields 3.51 req/s, while tp = 2 yields 2.33 req/s (66 %) and tp = 4 yields 1.34 req/s (38 %). G1, G2, and G4 were measured on the same instance (§3.3), and in a comparison with matched seeds, the gains for tp = 2 at rate 8 were +38.7 %, +26.1 %, and +34.2 % — all three seeds clearly positive. Note that these values were measured with NCCL peer-to-peer transfers and the custom all-reduce kernel disabled (§3.3) and represent the lower bound of achievable gains.
 
 The gains vary depending on the phase. At rate 8, the decode-side TPOT p95 decreases from 61.4 ms at tp = 1 to 43.6 ms at tp = 2 and 36.9 ms at tp = 4. On the other hand, the prefill-side TTFT p95 changes only from 248 ms to 227 ms and then to 213 ms. In terms of phase time per request, at rate 5, tp = 2 reduces prefill time by 13.2 % and decode time by 28.5 %, while at tp = 4, the reductions are 16.9 % and 42.5 %, respectively (Figure 10). Tensor parallelism is primarily effective for decoding.
 
@@ -349,16 +349,16 @@ logarithmic axis, annotated with the change against tp = 1; the two phases diffe
 <!-- BUDGET 0.4p. Completes RQ1: the steady-state view that open-loop
      overload points cannot provide. -->
 
+In open-loop measurements, there is no steady state for arrival rates exceeding capacity (§4.1). In closed-loop measurements, where the number of in-flight requests (the concurrency limit) is fixed, each point has a steady state, allowing the trade-off between latency and throughput to be directly observed.
+
+**Trade-off.** As the concurrency limit increases from 1 to 128, the output throughput increases 22-fold, from 31.9 tok/s to 717.4 tok/s. Meanwhile, the p95 value for end-to-end latency remains nearly flat at 19.2–20.6 seconds up to 8 concurrent executions, then rises from 23.0 seconds to 27.8 seconds starting at 16 (Figure 11).
+
 ![](../figures/fig10_closed_loop_tradeoff.png)
 
 **Figure 11.** Closed-loop latency-throughput trade-off (7B, ShareGPT, 1 GPU).
 Each point is one concurrency limit, labelled on the plot; error bars are the
 standard deviation over three repetitions on both axes. C2x (c=128, open marker)
 was measured on the Session C instance.
-
-In open-loop measurements, there is no steady state for arrival rates exceeding capacity (§4.1). In closed-loop measurements, where the number of in-flight requests (the concurrency limit) is fixed, each point has a steady state, allowing the trade-off between latency and throughput to be directly observed.
-
-**Trade-off.** As the concurrency limit increases from 1 to 128, the output throughput increases 22-fold, from 31.9 tok/s to 717.4 tok/s. Meanwhile, the p95 value for end-to-end latency remains nearly flat at 19.2–20.6 seconds up to 8 concurrent executions, then rises from 23.0 seconds to 27.8 seconds starting at 16 (Figure 11).
 
 By examining the marginal gains for each interval, we can identify the point at which the trade-off becomes unfavorable. At each stage where the number of concurrent executions doubles from 1 to 32, throughput increases by 62–95 %, whereas the increase in the p95 value is limited to 2–12 %. From 32 to 64, throughput increases by 14.5 % while p95 increases by 10.3 %, with the two remaining roughly in balance. From 64 to 128, throughput increases by only 0.9 %, while p95 increases by 5.4 %. Therefore, the inflection point lies between 32 and 64 concurrent executions; beyond that, additional parallelism consumes only latency.
 
@@ -383,16 +383,16 @@ The number of requests included in the decoding step also remains nearly constan
 
 ### 5.2 The mechanism: shorter steps at constant batch
 
+In §5.1, we showed that tensor parallelism does not increase the batch size. The throughput gain must therefore originate elsewhere. The step-axis log shows that the execution time per step itself has decreased.
+
+The reduction in execution time varies by phase. At rate 8, the model execution time for steps that perform only decoding is reduced from 32.27 ms at tp = 1 to 22.27 ms at tp = 2 and 17.95 ms at tp = 4 (1.45x, 1.80x). On the other hand, steps that carry prefill only decrease from 72.34 ms to 63.27 ms and then to 57.33 ms (1.14x, 1.26x). The same parallelization settings produce different effects depending on the phase (Figure 12, left).
+
 ![](../figures/fig11_step_parallelism.png)
 
 **Figure 12.** Why tensor parallelism helps, measured at step granularity (Qwen2.5-7B, ShareGPT, one 4×A40 instance). Left: mean model-execution time per
 engine step at rate 8, split by whether the step carried context tokens; annotations are the speedup against tp = 1. Chunked prefill is on by default, so
 "carrying prefill" means the step also processed context tokens, not that it was a contiguous prefill interval. Centre: the same decode-only steps binned by
 requests per step — the tp = 1 line is flat while the sharded lines rise. Right: decode step time and throughput gain against arrival rate on separate axes; step time is nearly flat while the gain climbs. Step times are averaged over the measured section of each run (§3.4). Pipeline parallelism produces no step-axis log (§3.1), so pp = 2 does not appear.
-
-In §5.1, we showed that tensor parallelism does not increase the batch size. The throughput gain must therefore originate elsewhere. The step-axis log shows that the execution time per step itself has decreased.
-
-The reduction in execution time varies by phase. At rate 8, the model execution time for steps that perform only decoding is reduced from 32.27 ms at tp = 1 to 22.27 ms at tp = 2 and 17.95 ms at tp = 4 (1.45x, 1.80x). On the other hand, steps that carry prefill only decrease from 72.34 ms to 63.27 ms and then to 57.33 ms (1.14x, 1.26x). The same parallelization settings produce different effects depending on the phase (Figure 12, left).
 
 Combined with the fact that the batch size is constant (§5.1), the mechanism is clear. Parallelization does not process more requests simultaneously; rather, it processes the same number of requests faster.
 
@@ -449,16 +449,16 @@ Memory-controller utilization is symmetric within each configuration (39.5 / 39.
 
 ### 5.5 CPU and framework-bound behaviour
 
-![](../figures/fig09_resources_vs_rate.png)
-
-**Figure 13.** Resource utilization against arrival rate for the two model sizes (ShareGPT, one GPU). Left: GPU counters from pynvml — SM utilization is the fraction of time any kernel was resident, memory-controller utilization the fraction of time the controller was busy. The 7B curves sit near saturation on the memory controller while the 0.5B curves leave both counters below 60 %. Right: per-process CPU from psutil, in percent of a single core, so values above 100 % mean one process spanning more than one core. The two panels cross: moving from 7B to 0.5B lowers the GPU counters and raises the CPU curve. The models are swept over different rate grids ({1…8} and {1…32} req/s, §3.3), so they overlap only up to rate 8. Samples are taken at 1 Hz and averaged over the measured section of each run, excluding start-up and warm-up (§3.4).
-
 <!-- The 0.5B model reaches a framework-bound regime (D27). Per-process CPU from the
      resource logger. This is where the task's "Document CPU performance" is answered. -->
 
 The analysis so far has concerned the 7B model. With the 0.5B model, the limiting resource changes.
 
 **Throughput plateaus while the GPU sits idle.** At rate 8, the 7B model reaches 88.8 % SM utilization and 94.2 % memory-controller utilization, the saturated memory bandwidth described in §5.3. At the same rate the 0.5B model reaches only 54.9 % and 39.3 %. Raising the rate to 32 leaves these at 53.3 % and 38.8 %, so nearly half the GPU remains unused (Figure 13, left). GPU power tells the same story: 173–182 W for the 0.5B model against 273 W for the 7B, a difference of 100 W that reflects computation not being performed.
+
+![](../figures/fig09_resources_vs_rate.png)
+
+**Figure 13.** Resource utilization against arrival rate for the two model sizes (ShareGPT, one GPU). Left: GPU counters from pynvml — SM utilization is the fraction of time any kernel was resident, memory-controller utilization the fraction of time the controller was busy. The 7B curves sit near saturation on the memory controller while the 0.5B curves leave both counters below 60 %. Right: per-process CPU from psutil, in percent of a single core, so values above 100 % mean one process spanning more than one core. The two panels cross: moving from 7B to 0.5B lowers the GPU counters and raises the CPU curve. The models are swept over different rate grids ({1…8} and {1…32} req/s, §3.3), so they overlap only up to rate 8. Samples are taken at 1 Hz and averaged over the measured section of each run, excluding start-up and warm-up (§3.4).
 
 **The CPU side behaves in the opposite way.** The CPU usage of the vLLM server process rises only from 28.1 % at rate 1 to 39.4 % at rate 8 for the 7B model, peaking at 40.5 % (rate 6). For the 0.5B model it is 65.3 % at rate 1, 120.8 % at rate 8, and 141.2 % at rate 32, peaking at 144.4 % (rate 24) (Figure 13, right). Exceeding 100 % means a single process is occupying more than one core. The benchmark client follows the same trend, rising from 3.9 % to 40.6 %.
 
