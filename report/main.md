@@ -294,7 +294,7 @@ This proportion of fixed costs increases as the model becomes lighter. For the 0
 
 The efficiency of the prefill itself also depends on the input length. The effective throughput during the prefill interval is 4,070 prompt tokens per second for I1 and 1,829 prompt tokens per second for I2, meaning longer prompts are 2.2 times more efficient. ShareGPT falls between these at 3,385 prompt tokens per second.
 
-**Queue.** Queue dwell time is negligible under all conditions (0.95 ms for I1 and 0.02 ms for I2). The slightly longer dwell time in I1 accompanies its longer prefill-carrying steps (§4.4, Figure 13).
+**Queue.** Queue dwell time is negligible under all conditions (0.95 ms for I1 and 0.02 ms for I2). The slightly longer dwell time in I1 accompanies its heavier per-request prefill (126 ms against 70 ms, Figure 6).
 
 ### 4.3 Effect of dataset and model size
 
@@ -344,7 +344,7 @@ The two strategies therefore separate cleanly: the same two devices buy throughp
 
 ![](../figures/fig12_parallelism_phases.png)
 
-**Figure 13.** Which phase each parallelism strategy shortens (Qwen2.5-7B, ShareGPT). Left: mean prefill and decode time per request at rate 5 on a
+**Figure 10s.** Which phase each parallelism strategy shortens (Qwen2.5-7B, ShareGPT). Left: mean prefill and decode time per request at rate 5 on a
 logarithmic axis, annotated with the change against tp = 1; the two phases differ by two orders of magnitude, hence the log scale. Right: the same change against tp = 1 across the rate grid, hollow markers for prefill and filled for decode. The tp series is read against a shared baseline within one instance, whereas pp = 2 was measured in Session D on a separate host and carries the ±3 % tolerance established in §3.5; the prefill reduction under pp = 2 clears that tolerance while the decode change does not. Because pipeline parallelism forces vLLM onto the batch-queue execution path, Session D produces no step-axis log (§3.1), so the phase times here are request-axis quantities and the step-level decomposition in §5.2 is available for the tp series only.
 
 ### 4.5 Closed-loop behaviour
@@ -354,7 +354,7 @@ logarithmic axis, annotated with the change against tp = 1; the two phases diffe
 
 ![](../figures/fig10_closed_loop_tradeoff.png)
 
-**Figure 10.** Closed-loop latency-throughput trade-off (7B, ShareGPT, 1 GPU).
+**Figure 11.** Closed-loop latency-throughput trade-off (7B, ShareGPT, 1 GPU).
 Each point is one concurrency limit, labelled on the plot; error bars are the
 standard deviation over three repetitions on both axes. C2x (c=128, open marker)
 was measured on the Session C instance.
@@ -388,7 +388,7 @@ The number of requests included in the decoding step also remains nearly constan
 
 ![](../figures/fig11_step_parallelism.png)
 
-**Figure 11.** Why tensor parallelism helps, measured at step granularity (Qwen2.5-7B, ShareGPT, one 4×A40 instance). Left: mean model-execution time per
+**Figure 12.** Why tensor parallelism helps, measured at step granularity (Qwen2.5-7B, ShareGPT, one 4×A40 instance). Left: mean model-execution time per
 engine step at rate 8, split by whether the step carried context tokens; annotations are the speedup against tp = 1. Chunked prefill is on by default, so
 "carrying prefill" means the step also processed context tokens, not that it was a contiguous prefill interval. Centre: the same decode-only steps binned by
 requests per step — the tp = 1 line is flat while the sharded lines rise. Right: decode step time and throughput gain against arrival rate on separate axes; step time is nearly flat while the gain climbs. Step times are averaged over the measured section of each run (§3.4). Pipeline parallelism produces no step-axis log (§3.1), so pp = 2 does not appear.
@@ -454,7 +454,7 @@ Memory-controller utilization is symmetric within each configuration (39.5 / 39.
 
 ![](../figures/fig09_resources_vs_rate.png)
 
-**Figure 12.** Resource utilization against arrival rate for the two model sizes (ShareGPT, one GPU). Left: GPU counters from pynvml — SM utilization is the fraction of time any kernel was resident, memory-controller utilization the fraction of time the controller was busy. The 7B curves sit near saturation on the memory controller while the 0.5B curves leave both counters below 60 %. Right: per-process CPU from psutil, in percent of a single core, so values above 100 % mean one process spanning more than one core. The two panels cross: moving from 7B to 0.5B lowers the GPU counters and raises the CPU curve. The models are swept over different rate grids ({1…8} and {1…32} req/s, §3.3), so they overlap only up to rate 8. Samples are taken at 1 Hz and averaged over the measured section of each run, excluding start-up and warm-up (§3.4).
+**Figure 13.** Resource utilization against arrival rate for the two model sizes (ShareGPT, one GPU). Left: GPU counters from pynvml — SM utilization is the fraction of time any kernel was resident, memory-controller utilization the fraction of time the controller was busy. The 7B curves sit near saturation on the memory controller while the 0.5B curves leave both counters below 60 %. Right: per-process CPU from psutil, in percent of a single core, so values above 100 % mean one process spanning more than one core. The two panels cross: moving from 7B to 0.5B lowers the GPU counters and raises the CPU curve. The models are swept over different rate grids ({1…8} and {1…32} req/s, §3.3), so they overlap only up to rate 8. Samples are taken at 1 Hz and averaged over the measured section of each run, excluding start-up and warm-up (§3.4).
 
 <!-- The 0.5B model reaches a framework-bound regime (D27). Per-process CPU from the
      resource logger. This is where the task's "Document CPU performance" is answered. -->
