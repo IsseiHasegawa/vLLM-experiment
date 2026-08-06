@@ -471,8 +471,8 @@ The analysis so far has concerned the 7B model. With the 0.5B model, the limitin
 
 **The step-axis log corroborates this.** The share of per-step time spent in scheduling is 2.2 % for the 7B model at rate 8 (0.801 ms against 36.17 ms of execution), against 5.4 % for the 0.5B model (0.303 ms against 5.29 ms). At rate 32 the 0.5B figure rises to 8.2 % (0.549 ms against 6.18 ms). The smaller the model — and therefore the shorter its execution step — the larger the share taken by fixed CPU work, and that share grows with load.
 
-This result matches the observation in §4.2, where 48–71 % of the client-observed TTFT for the 0.5B model fell outside prefill computation, with the proportion rising with the arrival rate. The CPU-side work measured here is a candidate for what occupies that interval,
-though the 1 Hz per-process samples and the per-request residual are not on a common timeline. For small models, the serving layer determines performance more than the model itself.
+This result matches the observation in §4.2, where 48–71 % of the client-observed TTFT for the 0.5B model fell outside what the server records,
+with the proportion rising with the arrival rate.The CPU-side work measured here is a candidate for what occupies that interval, though the 1 Hz per-process samples and the per-request residual are not on a common timeline. For small models, the serving layer determines performance more than the model itself.
 
 ## 6. Threats to Validity
 
