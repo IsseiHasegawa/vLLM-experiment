@@ -86,7 +86,7 @@ The core of this design lies in dividing the instrumentation into two axes. In v
 |:---------------|:----------------|:-------------------------------------------------------------|
 | Request axis | `requests.jsonl` | `queued_s`, `prefill_s`, `decode_s`, `inference_s`, `e2e_s`, `n_prompt`, `n_gen`, `n_cached` |
 | Step axis | `steps.jsonl` | `sched_s`, `exec_s`, `n_ctx_reqs`, `n_ctx_toks`, `n_gen_reqs`, `n_gen_toks`, `n_running`, `n_waiting`, `kv_usage` |
-| Resource | external logger | SM utilisation, memory-controller utilisation, VRAM, power (pynvml); per-process CPU utilisation for the server and the benchmark client (psutil) |
+| Resource | external logger | GPU utilisation, memory-controller utilisation, VRAM and power per device, read from `nvidia-smi --query-gpu` at 1 Hz; aggregate CPU utilisation of the processes classified as server and as benchmark client (psutil) |
 
 : Schema of the three instrumentation layers.
 
@@ -459,12 +459,14 @@ The analysis so far has concerned the 7B model. With the 0.5B model, the limitin
 
 ![](../figures/fig09_resources_vs_rate.png)
 
-**Figure 13.** Resource utilization against arrival rate for the two model sizes (ShareGPT, one GPU). Left: GPU counters from pynvml — SM utilization is the fraction of time any kernel was resident, memory-controller utilization the fraction of time the controller was busy. The 7B curves sit near saturation on the memory controller while the 0.5B curves leave both counters below 60 %. Right: per-process CPU from psutil, in percent of a single core, so values above 100 % mean one process spanning more than one core. The two panels cross: moving from 7B to 0.5B lowers the GPU counters and raises the CPU curve. The models are swept over different rate grids ({1…8} and {1…32} req/s, §3.3), so they overlap only up to rate 8. Samples are taken at 1 Hz and averaged over the measured section of each run, excluding start-up and warm-up (§3.4).
+**Figure 13.** Resource utilization against arrival rate for the two model sizes (ShareGPT, one GPU). Left: GPU counters from pynvml — SM utilization is the fraction of time any kernel was resident, memory-controller utilization the fraction of time the controller was busy. The 7B curves sit near saturation on the memory controller while the 0.5B curves leave both counters below 60 %. Right: CPU from psutil, summed over the processes classified as server and as
+client, in percent of a single core, so values above 100 % mean the group spans more than one core. The two panels cross: moving from 7B to 0.5B lowers the GPU counters and raises the CPU curve. The models are swept over different rate grids ({1…8} and {1…32} req/s, §3.3), so they overlap only up to rate 8. Samples are taken at 1 Hz and averaged over the measured section of each run, excluding start-up and warm-up (§3.4).
 
-**The CPU side behaves in the opposite way.** The CPU usage of the vLLM server process rises only from 28.1 % at rate 1 to 39.4 % at rate 8 for the 7B model, peaking at 40.5 % (rate 6). For the 0.5B model it is 65.3 % at rate 1, 120.8 % at rate 8, and 141.2 % at rate 32, peaking at 144.4 % (rate 24) (Figure 13, right). Exceeding 100 % means a single process is occupying more than one core. The benchmark client follows the same trend, rising from 3.9 % to 40.6 %.
+**The CPU side behaves in the opposite way.** The CPU usage of the vLLM server-side processes rises only from 28.1 % at rate 1
+to 39.4 % at rate 8 for the 7B model, ... The counter sums the processes the logger classifies as server, which in vLLM V1 is at least the frontend and the
+engine core (§3.1), so values above 100 % mean the group exceeds one core-equivalent and say nothing about how any one process is threaded. The benchmark client follows the same trend, rising from 3.9 % to 40.6 %.
 
-**This is not exhaustion of CPU resources.** System-wide CPU usage stays between 5 % and 8 % throughout, for both models.The server process occupying 1.4 cores leaves ample headroom, so the limit is not the quantity of CPU available. Note that exceeding 100 % means the process already spans more than one core, so the work is not strictly serial; what the measurement supports is that host-side work in the serving layer — scheduling, tokenization, HTTP handling and their hand-offs — grows into the space a short model step leaves, not that any one of them is the serial bottleneck. Which it
-is was not measured; a CPU profile would separate them. The regime is framework-bound rather than CPU-bound.
+**This is not exhaustion of CPU resources.** System-wide CPU usage stays between 5 % and 8 % throughout, for both models. The server-side group occupying 1.4 core-equivalents leaves ample headroom, so the limit is not the quantity of CPU available. What the measurement supports is that host-side work in the serving layer — scheduling, tokenization, HTTP handling and their hand-offs — grows into the space a short model step leaves. It does not identify which of them is the constraint, nor whether any of them is serial: the counter is an aggregate over processes and was not resolved by process or thread. A CPU profile would separate them. The regime is framework-bound rather than CPU-bound.
 
 **The step-axis log corroborates this.** The share of per-step time spent in scheduling is 2.2 % for the 7B model at rate 8 (0.801 ms against 36.17 ms of execution), against 5.4 % for the 0.5B model (0.303 ms against 5.29 ms). At rate 32 the 0.5B figure rises to 8.2 % (0.549 ms against 6.18 ms). The smaller the model — and therefore the shorter its execution step — the larger the share taken by fixed CPU work, and that share grows with load.
 
@@ -492,6 +494,8 @@ with the proportion rising with the arrival rate.The CPU-side work measured here
 **Cross-session comparison.** The A1 anchor ties Sessions A through C to within 0.97 %, but Session D (P1) carries no anchor. A working tolerance of ±3 % was derived from a single 20-request tp = 1 boot warm-up (§3.5). Differences smaller than that tolerance are not interpreted.
 
 **Asymmetry in scheduler time.** Per-step scheduling time is 0.848 ms at tp = 1 against roughly 0.22 ms at tp ≥ 2. The difference is presumably an artifact of how worker processes are arranged, but this was not established by measurement. At 0.6 ms against a 32 ms step it could inflate the tp = 2 gain (+32.5 %) by about 2 %. The direction of the conclusion is unaffected, but the gain is overstated by that margin.
+
+**Resource counter definitions.** GPU counters are read from nvidia-smi once per second, and the CPU columns are sums over the processes the logger classifies as server or as client rather than per-process measurements. The server classifier matches any command line containing vllm, so the logger itself is counted on the server side whenever it runs from a path containing the repository name; the offset is on the order of a few percent of one core and does not affect the comparison between model sizes, which spans 28 % to 141 %.
 
 **Statistical power.** The C1 control (instrumentation on versus off) used three seed pairs, so the paired t-test has two degrees of freedom and the smallest p-value is 0.125 (§3.5). What the control supports is an upper bound — roughly 3 % on latency and 0.3 % on throughput — not a detection of the effect.
 
