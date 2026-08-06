@@ -493,7 +493,7 @@ with the proportion rising with the arrival rate. The CPU-side work measured her
 
 **Cross-session comparison.** The A1 anchor ties Sessions A through C to within 0.97 %, but Session D (P1) carries no anchor. A working tolerance of ±3 % was derived from a single 20-request tp = 1 boot warm-up (§3.5). Differences smaller than that tolerance are not interpreted.
 
-**Asymmetry in scheduler time.** Per-step scheduling time is 0.848 ms at tp = 1 against roughly 0.22 ms at tp ≥ 2. The difference is presumably an artifact of how worker processes are arranged, but this was not established by measurement. At 0.6 ms against a 32 ms step it could inflate the tp = 2 gain (+32.5 %) by about 2 %. The direction of the conclusion is unaffected, but the gain is overstated by that margin.
+**Asymmetry in scheduler time.** Per-step scheduling time is 0.848 ms at tp = 1 against roughly 0.22 ms at tp = 2 and tp = 4. The difference is presumably an artifact of how worker processes are arranged, but this was not established by measurement. At 0.6 ms against a 32 ms step it could inflate the tp = 2 gain (+32.5 %) by about 2 %. The direction of the conclusion is unaffected, but the gain is overstated by that margin.
 
 **Resource counter definitions.** GPU counters are read from nvidia-smi once per second, and the CPU columns are sums over the processes the logger classifies as server or as client rather than per-process measurements. The server classifier matches any command line containing vllm, so the logger itself is counted on the server side whenever it runs from a path containing the repository name; the offset is on the order of a few percent of one core and does not affect the comparison between model sizes, which spans 28 % to 141 %.
 
