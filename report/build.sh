@@ -4,6 +4,9 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 pandoc main.md \
+  appendix/A_safeguards.md \
+  appendix/B_requirements_map.md \
+  appendix/C_environment.md \
   --resource-path=.:..:../figures \
   --citeproc \
   --bibliography=references.bib \

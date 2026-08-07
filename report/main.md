@@ -526,10 +526,4 @@ with the proportion rising with the arrival rate. The CPU-side work measured her
 ::: {#refs}
 :::
 
----
 
-## Appendix
-
-- **A.** Timing-attribution safeguards — `appendix/A_safeguards.md`
-- **B.** Task requirement map — `appendix/B_requirements_map.md`
-- **C.** Environment and reproduction — `appendix/C_environment.md`
