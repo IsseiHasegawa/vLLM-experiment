@@ -7,7 +7,7 @@ was chosen. Run:
 
     python3 scripts/make_matrix.py --out configs/matrix.csv
 
-Design summary (see PLAN.md §3 for the reasoning):
+Design summary (see the decision log in README.md for the reasoning):
 
   Rate grid (7B)     {1,2,3,4,5,6,8,inf}. The pilot measured a sustainable
                      capacity of 3.2 req/s (ShareGPT) and 4.5 req/s (random),

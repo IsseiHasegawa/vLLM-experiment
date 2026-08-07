@@ -123,7 +123,7 @@
   TPOT p95 +1.05 %, request throughput -0.26 %, and all seven metrics move in the same
   direction. Reported claim: logging costs <=3 % on latency and <=0.3 % on throughput, so
   instrumented latencies are upper bounds and instrumented throughput a lower bound.
-  This revises the session-A quality gate in PLAN 6.4, which required the string "no
+  This revises the session-A quality gate, which required the string "no
   instrumentation effect detected": a small, bounded, correctly signed effect is the
   expected outcome, not a failure.
   **The original entry claimed a detection at p=0.010; that was wrong** - see D60. With
@@ -276,7 +276,7 @@
   saturation claim therefore rests on latency (figure 1: p95 TTFT +62 % across the finite
   grid) and on the closed-loop curve (figure 10), with figure 3 reporting what the standard
   tool reports and showing how far that depends on the definition. This closes the
-  operational-definition task that PLAN scheduled for 8/3
+  operational-definition task scheduled for 8/3
 - D49 (2026-08-01): **Overlays with different rate grids were plotting the offline point
   at two different x positions.** `xpos` placed 'inf' one of each series' own steps past
   that series' own maximum, so in figure 6 the 7B offline point (grid 1-8) landed near
