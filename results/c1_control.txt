@@ -29,7 +29,7 @@ direction agreement: 7/7 metrics move in the same direction (logging slower / lo
   This is weaker evidence than the count suggests: the seven metrics are not independent. Run duration is 200 / request throughput, output throughput is request throughput times a seed-fixed output length, and the p50/p95 pairs describe the same distribution. There are about three distinct quantities here (TTFT, TPOT, throughput), and they are themselves linked because slower steps lower throughput. The consistent sign is worth reporting, but it is not a significance test.
 
 VERDICT: no instrumentation effect above ±2.0% (paired test).
-  Bound for the report: every metric within 2.97% (paired, n=3).
-  With n=3 the unpaired p-values have almost no power; the paired bound is the claim this control supports.
+  Observed mean difference for the report: largest 2.97% (paired, n=3); no metric significant.
+  With n=3 neither test has the power to establish a tight upper bound; report the observed difference, not a bound.
 
 logging volume in the enabled arm: 600 request records, 5116 step records over 3 runs
