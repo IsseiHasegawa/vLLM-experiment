@@ -379,7 +379,8 @@
   decode is bound by (D45) - doubles. Prefill processes hundreds of tokens at once, so
   pipeline stages have work to overlap and PP does help there.
   Consequences, all measured: decode is ~98 % of a request (D53), so only TP moves
-  throughput (pp=2 is within 0.6 % of tp=1 up to rate 4). TTFT is prefill plus queueing,
+  throughput (pp=2 is within 0.6 % of tp=1 up to rate 4). TTFT is prefill plus queueing
+  plus the frontend path outside the server timestamps (D-, §4.2),
   so PP does move it: -9 % to -12 % on the finite grid. Under burst arrival the effect is
   much larger - at rate inf the mean queueing delay falls from 2809 ms (tp=1) to 1270 ms
   (pp=2), a 55 % reduction, and TTFT p95 from 6940 ms to 3884 ms. The earlier one-line
@@ -412,6 +413,7 @@
   throughput times a seed-fixed output length, and the p50/p95 pairs describe one
   distribution, so there are roughly three distinct quantities, not seven independent
   ones. The consistent sign is worth reporting; it is not a significance test.
-  What the control supports is unchanged and is what Methods should state: **logging costs
-  at most ~3 % on latency and ~0.3 % on throughput**, reported as a bound rather than a
-  detection, because at n=3 the test has almost no power
+  What the control supports is an observed mean difference, not a bound: **+2.97 % on
+  latency and −0.26 % on throughput**, with no metric reaching significance. At n=3 the
+  95 % interval on the largest difference spans roughly −1.8 % to +7.7 %, so the control
+  rules out a large effect but does not establish a tight upper bound.
