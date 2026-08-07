@@ -130,15 +130,12 @@ def fig05(stats_path="results/dataset_stats.json", outdir="figures", repo="."):
         rv = real.get(name)
         if st_:
             lines.append(
-                f"{name:9s} nominal   in p50 {st_.get('input_p50','?'):>5} "
-                f"p95 {st_.get('input_p95','?'):>5} max {st_.get('input_max','?'):>6}"
-                f"  |  out p50 {st_.get('output_p50','?'):>5} "
+                f"{name:9s} nominal   out p50 {st_.get('output_p50','?'):>5} "
                 f"p95 {st_.get('output_p95','?'):>5}")
         if rv:
             i, o = rv["input_lens"], rv["output_lens"]
             lines.append(
-                f"{name:9s} realised  in p50 {q(i,.5):>5} p95 {q(i,.95):>5} "
-                f"max {max(i):>6}  |  out p50 {q(o,.5):>5} p95 {q(o,.95):>5} "
+                f"{name:9s} realised  out p50 {q(o,.5):>5} p95 {q(o,.95):>5} "
                 f"max {max(o):>6}")
     if lines:
         fig.subplots_adjust(bottom=0.34)
