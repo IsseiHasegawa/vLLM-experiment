@@ -66,6 +66,15 @@ commands remain byte-identical to Sessions A and B.
 ```
 git clone https://github.com/IsseiHasegawa/vLLM-experiment
 python3 scripts/make_matrix.py            # regenerates configs/matrix.csv
-python3 scripts/run_experiments.py --session A --only A1a,C1off,S1,S2,I1,I2,A1b,P0,S3
+
+# The ShareGPT file is not committed; download it and verify the sha256 in §3.2.
+# Fresh manifest/results paths are used because the runner skips rows already
+# marked ok in results/manifest.csv.
+python3 scripts/run_experiments.py --matrix configs/matrix.csv \
+  --manifest results/manifest_repro.csv --results-dir results/raw/repro \
+  --sharegpt-path /path/to/ShareGPT_V3_unfiltered_cleaned_split.json \
+  --session A --only A1a,C1off,S1,S2,I1,I2,A1b,P0,S3
+
 python3 scripts/plots/make_figures.py     # regenerates all figures from results/
+python3 scripts/verify_report_numbers.py  # re-checks every number in the report against the raw logs
 ```
