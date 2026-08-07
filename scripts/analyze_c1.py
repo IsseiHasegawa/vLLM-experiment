@@ -265,10 +265,11 @@ def main():
              f"({src} test).")
         rc = 0
     if len(seeds) >= 2:
-        emit(f"  Bound for the report: every metric within "
-             f"{abs(worst_paired):.2f}% (paired, n={len(seeds)}).")
-        emit("  With n=3 the unpaired p-values have almost no power; the "
-             "paired bound is the claim this control supports.")
+        emit(f"  Observed mean difference for the report: largest "
+             f"{abs(worst_paired):.2f}% (paired, n={len(seeds)}); "
+             f"no metric significant.")
+        emit(f"  With n={len(seeds)} neither test has the power to establish a "
+             "tight upper bound; report the observed difference, not a bound.")
 
     # Per-request overhead implied by the logging volume, for the Methods text.
     recs = []
