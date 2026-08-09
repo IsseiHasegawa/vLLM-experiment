@@ -37,13 +37,7 @@ This report forks vLLM, adds instrumentation to three files, and reports 232 mea
 
 ## 2. Background & Related Work
 
-<!-- BUDGET 0.8p total. Write LAST. -->
-
 ### 2.1 Prefill and decode
-
-<!-- ~0.3p. Minimum needed to read the results: two-phase structure, KV cache,
-     continuous batching, chunked prefill, and the metric mapping
-     (TTFT <-> prefill, TPOT/ITL <-> decode). Cite Vaswani, Orca, vLLM, Sarathi-Serve. -->
 
 Inference with an autoregressive Transformer splits into two phases of different character [@Vaswani2017]. Prefill processes the entire prompt at once and writes the key and value tensors of every layer into the KV cache. Decode then reads that cache and produces one token per step. This asymmetry is what the present report measures: a prefill step handles hundreds to over a thousand tokens, while a decode step advances each request by exactly one.
 
