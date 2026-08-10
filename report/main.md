@@ -60,8 +60,6 @@ What this report addresses instead is the measurement itself. To our knowledge, 
 
 ## 3. Methodology
 
-<!-- BUDGET 1.5p total across 3.1-3.5. -->
-
 ### 3.1 Instrumentation
 For this measurement, we forked vLLM from GitHub (vllm-project/vllm, base commit 702f4814), made changes to three files totaling approximately 190 lines on the instrumentation branch, and then built it using an editable install from the source. Inference paths have never been changed except for instrumentation. The main purpose of this research is not optimization but measurement. All of these changes are intended to make the internal time readable from the outside. The fork, the instrumentation commit (019e5d1), and the buffered-flush commit (d4e0675) are available at github.com/IsseiHasegawa/vllm.
 
@@ -209,10 +207,6 @@ Two consequences follow, and both are stated where the numbers appear (§4.4). T
 
 
 ## 4. Results
-
-<!-- BUDGET 2.5p total. FACTS ONLY.
-Rule: if a sentence contains "because", "due to", or "this is explained by",
-it belongs in section 5. Check this before committing the section. -->
 
 ### 4.1 Effect of arrival rate
 
