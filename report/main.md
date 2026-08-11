@@ -352,9 +352,6 @@ By examining the marginal gains for each interval, we can identify the point at 
 
 ## 5. Bottleneck Analysis
 
-<!-- BUDGET 1.2p. REASONS. This section carries the originality of the report.
-     Write it in this order - the order is the argument. -->
-
 ### 5.1 The KV cache is not the constraint
 
 As shown in §4.4, tensor parallelism improves throughput by up to 52 %. The first hypothesis to consider in explaining this gain is the KV cache capacity. Adding more GPUs increases the total size of the KV space, allowing it to hold more requests simultaneously. As batch sizes increase, the amount of data processed per step increases, leading to higher throughput — this path is plausible, and KV-space management is central to vLLM's design.
