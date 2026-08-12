@@ -1,35 +1,53 @@
 # Summary
 
-<!-- 3-4 sentences: fork base 702f4814, 3 files ~190 lines,
-232 runs on A40s, 5 factors. Plain register. -->
+I forked vLLM and added instrumentation to three files, about 190 lines
+in total, so that the per-phase timestamps the engine already computes
+are written out as logs. Using that build I ran 232 experiments on
+NVIDIA A40 GPUs, varying arrival rate, dataset, model size, GPU count,
+and parallelism strategy. All numbers below come from those runs; a
+script in the repository re-checks every one of them against the raw
+logs.
 
-<!-- Finding 1: load -> batch growth, not queue growth;
-capacity 711 tok/s ~ 3.7 req/s (closed loop) -->
+**Load shows up as bigger batches, not longer queues.** vLLM admits a
+waiting request into the running batch at the next scheduling step, so
+time spent in the scheduler queue stayed at or below 0.021 ms at every
+rate I tested, while the decode batch grew from 6 to 23 requests. This
+means achieved throughput is a poor signal for saturation, so I measured
+capacity with a closed-loop sweep instead: about 711 output tokens per
+second, or 3.7 requests per second, for the 7B model on one GPU.
 
-<!-- Finding 2: client TTFT 38% (7B) / 48-71% (0.5B)
-outside server-recorded interval -->
+**Most of what the client waits for is not prefill compute.** For the 7B
+model at rate 5, the server accounts for 69 ms of a 112 ms observed
+TTFT; the remaining 38 % happens outside the interval the engine
+records. On the 0.5B model that share is 48-71 % and grows with load.
+Prefill compute itself never exceeded 2 % of end-to-end time.
 
-<!-- Finding 3: phase-selective parallelism, 1.80x decode vs 1.26x prefill;
-pp=2 at same 2 GPUs: TTFT -12%, throughput -0.3% -->
+**Parallelism helps one phase at a time.** Going from one GPU to four
+makes decode-only steps 1.80x faster but steps carrying prefill only
+1.26x faster. Holding the device count at two and changing only the
+strategy separates the effect: pipeline parallelism turns none of the
+second GPU into throughput (-0.3 %) yet cuts TTFT p95 by 12 %, about as
+much as tensor parallelism does.
 
-<!-- Requirement checklist, 12 rows:
-Requirement | Section | Figure | Key number
-rows 3 and 4 (prefill / decode resource use) cite
-sections 2+4 and figures R2+R6 -->
-| # | Requirement | Section | Figure | Key number |
-|---|---|---|---|---|
-| 1 | Deploy vLLM; make changes and recompile | 1 | — | fork of 702f4814, 3 files, ~190 lines |
-| 2 | Instrument end-to-end and per-phase latency, throughput | 1, 3.1 | R1 | 51,808 request + 756,661 step records |
-| 3 | Time and resource use during prefill | 2, 4 | R2, R6 | 0.30–1.94 % of e2e; prefill-carrying step 1.26× at tp=4 |
-| 4 | Time and resource use during decode | 2, 4 | R2, R6 | 98.7 % of e2e; decode-only step 1.80× at tp=4 |
-| 5 | At least two documented datasets | 3.2 | paper Fig. 2 | ShareGPT p95 767 tok vs random fixed 256 |
-| 6 | Vary request arrival rate | 3.1 | R3 | 1–8 req/s open loop, 1–128 closed loop |
-| 7 | At least two models or model sizes | 3.3 | R4 | Qwen2.5-7B and 0.5B, 14:1 parameters |
-| 8 | Vary the number of GPUs | 3.4 | R5 | 1 / 2 / 4 GPUs, +32.5 % and +52.0 % at rate 8 |
-| 9 | Document CPU performance | 3.3 | R4 | server group 28 % → 144 % of one core |
-| 10 | Enable and evaluate parallelism options | 3.4 | R5 | tp = 1/2/4 and pp = 2 at equal device count |
-| 11 | Analyse results to determine bottlenecks | 4 | R6 | memory controller 93.6 % → 39.5 % |
-| 12 | Generate figures | all | R1–R6 | 6 figures here, 12 in the attached paper |
+The limiting resource is not the same in every configuration. On the 7B
+model the GPU memory controller is busy 94 % of the time; on the 0.5B
+model the GPU sits half idle while the serving-layer processes exceed
+one CPU core. Section 4 works through this.
+
+| # | Requirement | Where | Key number |
+|:--|:-----------------------------|:---------|:------------------------------|
+| 1 | Deploy vLLM; recompile | §1 | fork of 702f4814, 3 files, ~190 lines |
+| 2 | Instrument latency and throughput | §1, §3.1, R1 | 51,808 request + 756,661 step records |
+| 3 | Prefill: time and resource use | §2, §4, R2, R6 | 0.30–1.94 % of e2e; step 1.26× at tp=4 |
+| 4 | Decode: time and resource use | §2, §4, R2, R6 | 98.7 % of e2e; step 1.80× at tp=4 |
+| 5 | Two documented datasets | §3.2 | ShareGPT p95 767 tok vs random 256 |
+| 6 | Vary arrival rate | §3.1, R3 | 1–8 req/s open, 1–128 closed loop |
+| 7 | Two model sizes | §3.3, R4 | Qwen2.5-7B and 0.5B, 14:1 parameters |
+| 8 | Vary GPU count | §3.4, R5 | 1/2/4 GPUs, +32.5 % and +52.0 % |
+| 9 | Document CPU performance | §3.3, R4 | server group 28 % → 144 % of one core |
+| 10 | Evaluate parallelism options | §3.4, R5 | tp = 1/2/4 and pp = 2 at 2 GPUs |
+| 11 | Determine bottlenecks | §4, R6 | memory controller 93.6 % → 39.5 % |
+| 12 | Generate figures | R1–R6 | 6 here, 12 in the attached paper |
 
 # 1. Setup and instrumentation
 
