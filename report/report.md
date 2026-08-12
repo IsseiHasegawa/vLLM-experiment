@@ -79,14 +79,12 @@ can separate time and resource use by phase, so I log both:
   the code being measured.
 
 Three checks support the numbers that follow. The identity
-`prefill + decode = inference` holds for every record. Against
-Prometheus, the queued, prefill and decode means agree exactly (72.04,
-238.24 and 2,135.56 ms), and token counts match on both axes. Finally,
-because the logger is switched on by an environment variable, I could
-run the same binary with instrumentation off: latency was 2.97 % lower
-and throughput 0.26 % higher without it, and with three seed pairs
-neither difference reaches significance (smallest p = 0.125). That
-bounds the overhead as small but does not pin it precisely.
+`prefill + decode = inference` holds for every record, and the queued,
+prefill and decode means agree exactly with vLLM's own Prometheus
+histograms. Because the logger is switched on by an environment
+variable, I could also run the same binary with instrumentation off:
+latency was 2.97 % lower without it, which with three seed pairs does
+not reach significance (p = 0.125).
 
 Two limitations belong here. Session D, which measured pipeline
 parallelism, produces no step-axis log at all: vLLM's pipeline executor
@@ -102,10 +100,9 @@ the attached paper, §3.
 The two phases are wildly unequal in wall-clock terms. For ShareGPT at
 rate 5, a request spends 7,334 ms of its 7,434 ms end-to-end time in
 decode and 69 ms in prefill — 0.93 %. This is not an artefact of the
-workload: with a prefill-heavy mix (512 in, 128 out) the prefill share
-rises only to 1.94 %, and with a decode-heavy mix (128 in, 512 out) it
-falls to 0.30 %. Across every finite rate and every group I measured,
-prefill stayed under 2 % of end-to-end time. It reaches 2.7 % only in
+workload: across every finite rate and every group I measured, including
+deliberately prefill-heavy and decode-heavy mixes, prefill stayed
+between 0.30 % and 1.94 % of end-to-end time. It reaches 2.7 % only in
 the offline burst, where all 200 requests arrive at once.
 
 Prefill still matters, because it is what the user waits for before the
@@ -198,16 +195,12 @@ a fixed 256 for random; outputs average 191.6 tokens against a fixed
 128. I recorded the source file's SHA-256 so the sampling can be
 reproduced.
 
-At matched rates, random is faster on TTFT — p95 of 109 ms against
-151 ms at rate 1, and 211 ms against 245 ms at rate 8. The prompt-length
-tail is the likely reason, though the two workloads also differ in
-output length, so this comparison does not isolate it. On delivered
-throughput the difference is larger: random was still climbing at an
-offered rate of 20, reaching 12.10 req/s, where ShareGPT reached
-3.54 req/s at rate 8. That is more than threefold, but it bounds the
-combined effect of prompt and output length rather than separating them,
-and no closed-loop sweep was run for random, so its steady-state ceiling
-is unmeasured.
+The two workloads differ substantially in what the server delivers:
+random was still climbing at an offered rate of 20, reaching
+12.10 req/s, where ShareGPT reached 3.54 req/s at rate 8. That is more
+than threefold, but it bounds the combined effect of prompt and output
+length rather than separating them, and no closed-loop sweep was run for
+random, so its steady-state ceiling is unmeasured.
 
 The input-to-output ratio produces a sharper lesson. Holding everything
 else fixed and comparing 512-in/128-out against 128-in/512-out, the
@@ -238,12 +231,10 @@ when the model does.
 
 The two models also respond to load differently. TTFT p95 for the 0.5B
 model stays flat at 51-53 ms from rate 1 to rate 8, where the 7B model
-climbs from 151 ms to 245 ms. The 0.5B model only starts responding at
-rate 12 and above, reaching 78 ms at rate 32. Because the two were swept
-over different rate grids, figures up to rate 8 are a like-for-like
-comparison and anything beyond that describes the 0.5B model alone. Peak
-output throughput is 675 tok/s for the 7B at rate 8 against 3,371 tok/s
-for the 0.5B at rate 32, a factor of 5.0.
+climbs from 151 ms to 245 ms; the 0.5B model only starts responding at
+rate 12 and above. The two were swept over different rate grids, so
+comparisons hold up to rate 8 and anything beyond describes the 0.5B
+model alone. Peak output throughput differs by a factor of 5.0.
 
 What makes the small model interesting is that it stops being limited by
 the GPU. At rate 8 the 7B model runs the GPU at 88.8 % utilisation and
