@@ -17,11 +17,6 @@ The limiting resource is not fixed. On the 7B model the memory controller is bus
 
 ## 1. Introduction
 
-<!-- BUDGET 0.8p. Write after section 5 is finished. -->
-
-<!-- Paragraph 1: why serving-system performance is measured per phase at all. -->
-
-<!-- Paragraph 3: the research questions. These map 1:1 onto 4.1-4.4 and onto section 7. -->
 
 Inference with a large language model consists of two phases of different character: prefill, which processes the entire prompt at once, and decode, which produces one token per step. The distinction has become a premise of recent serving-system design, to the point that some systems place the two phases on separate device pools [@Zhong2024; @Patel2024]. What an operator sees, however, is an aggregate — a TTFT figure, a throughput number. When an aggregate degrades, nothing in it distinguishes a prefill problem from a decode problem, or either from a fixed cost in the serving layer that is not phase computation at all. Measuring per phase removes that ambiguity. And if the two phases are limited by different resources, then which remedy applies — adding GPUs, using a smaller model, changing the parallelism strategy — cannot be decided without separating them.
 
@@ -382,10 +377,6 @@ The extent of the reduction depends on the batch size. When decoding steps are s
 Reducing the step time only begins to translate into throughput once saturation is reached. At rate 1, the decoding step for tp = 4 is 2.48 times faster than that for tp = 1 (12.71 ms vs. 31.48 ms). However, the improvement in achieved throughput is limited to 4.6 %. In regions where the arrival rate is below capacity, the arrival rate determines throughput, and faster steps merely increase idle time. The gap narrows as the load increases: at rate 8, a 1.80-fold increase in step speed results in a 52.0 % increase in throughput, while at rate ∞, a 1.71-fold increase yields a 55.4 % increase (Figure 12, right). Measured at rate 1 the same configuration reports a 4.6 % gain; at rate 8 it reports 52.0 %. A single throughput number is meaningful only together with the rate at which it was taken.
 
 ### 5.3 Why decode benefits more
-
-<!-- Per-GPU weight traffic falls with tensor parallelism, relieving a
-     memory-bandwidth-bound phase; prefill is compute-bound and gains less.
-     Connect back to 4.2. -->
 
 The two observations presented in §5.2 — that decoding time is reduced by a factor of 1.80 while prefill time is reduced by only a factor of 1.26, and that the decoding gain decreases as the batch size increases — are two manifestations of the same principle.
 
