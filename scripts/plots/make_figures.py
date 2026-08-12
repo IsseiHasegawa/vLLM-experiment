@@ -35,7 +35,7 @@ def main():
                     help="restrict to specific results/raw/* dirs")
     args = ap.parse_args()
 
-    want = (set(range(1, 13)) if args.figures == "all"
+    want = (set(range(1, 14)) if args.figures == "all"
             else {int(x) for x in args.figures.split(",") if x.strip()})
 
     print("Loading runs ...")
