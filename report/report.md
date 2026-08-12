@@ -115,6 +115,8 @@ tokenisation, the hand-off from frontend to engine, and any wait before
 the request reaches the scheduler. I did not measure which of these
 dominates; separating them would need a timestamp at each hand-off.
 
+![**Figure R2.** What the client's wait is made of, for the two fixed-length workloads. The server records only the queue and prefill intervals; the rest spans HTTP, serialisation, tokenisation and the path to the engine.](../figures/fig13_ttft_decomposition.png){width=55%}
+
 That share grows as the model gets smaller. On the 0.5B model it is
 48 % at rate 1, 59 % at rate 8, and 71 % at rate 32, because the prefill
 interval itself stays flat — 17.2 ms down to 14.4 ms — while the
