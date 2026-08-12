@@ -1,3 +1,8 @@
+---
+title: "vLLM Serving Performance Analysis: Phase-Level Measurement of Prefill and Decode"
+author: "Issei Hasegawa"
+---
+
 # Summary
 
 I forked vLLM and added instrumentation to three files, about 190 lines
@@ -8,17 +13,18 @@ and parallelism strategy. All numbers below come from those runs.
 
 **Load shows up as bigger batches, not longer queues.** vLLM admits a
 waiting request into the running batch at the next scheduling step, so
-time spent in the scheduler queue stayed at or below 0.021 ms at every
-rate I tested, while the decode batch grew from 6 to 23 requests. This
-means achieved throughput is a poor signal for saturation, so I measured
-capacity with a closed-loop sweep instead: about 711 output tokens per
+the average time spent in the scheduler queue stayed at or below
+0.021 ms at every finite rate, while the decode batch grew from 6 to 23
+requests. This means achieved throughput is a poor signal for saturation, 
+so I measured capacity with a closed-loop sweep instead: about 711 output tokens per
 second, or 3.7 requests per second, for the 7B model on one GPU.
 
 **Most of what the client waits for is not prefill compute.** For the 7B
 model at rate 5, the server accounts for 69 ms of a 112 ms observed
 TTFT; the remaining 38 % happens outside the interval the engine
 records. On the 0.5B model that share is 48-71 % and grows with load.
-Prefill compute itself never exceeded 2 % of end-to-end time.
+Prefill compute itself never exceeded 2 % of end-to-end time at any
+finite rate.
 
 **Parallelism helps one phase at a time.** Going from one GPU to four
 makes decode-only steps 1.80x faster but steps carrying prefill only
@@ -36,16 +42,16 @@ one CPU core. Sections 3.3 and 4 work through this.
 |:--|:-----------------------------|:---------|:------------------------------|
 | 1 | Deploy vLLM; recompile | §1 | fork of 702f4814, 3 files, ~190 lines |
 | 2 | Instrument latency and throughput | §1, §3.1 | 51,808 request + 756,661 step records |
-| 3 | Prefill: time and resource use | §2, §4, R2, R6 | 0.30–1.94 % of e2e; step 1.26× at tp=4 |
-| 4 | Decode: time and resource use | §2, §4, R2, R6 | 98.7 % of e2e; step 1.80× at tp=4 |
+| 3 | Prefill: time and resource use | §2, §4, R1, R5 | 0.30–1.94 % of e2e; step 1.26× at tp=4 |
+| 4 | Decode: time and resource use | §2, §4, R1, R5 | 98.7 % of e2e; step 1.80× at tp=4 |
 | 5 | Two documented datasets | §3.2 | ShareGPT p95 767 tok vs random 256 |
-| 6 | Vary arrival rate | §3.1, R3 | 1–8 req/s open, 1–128 closed loop |
-| 7 | Two model sizes | §3.3, R4 | Qwen2.5-7B and 0.5B, 14:1 parameters |
-| 8 | Vary GPU count | §3.4, R5 | 1/2/4 GPUs, +32.5 % and +52.0 % |
-| 9 | Document CPU performance | §3.3, R4 | server group 28 % → 144 % of one core |
-| 10 | Evaluate parallelism options | §3.4, R5 | tp = 1/2/4 and pp = 2 at 2 GPUs |
-| 11 | Determine bottlenecks | §4, R6 | memory controller 93.6 % → 39.5 % |
-| 12 | Generate figures | R2–R6 | 5 here, 12 in the attached paper |
+| 6 | Vary arrival rate | §3.1, R2 | 1–8 req/s open, 1–128 closed loop |
+| 7 | Two model sizes | §3.3, R3 | Qwen2.5-7B and 0.5B, 14:1 parameters |
+| 8 | Vary GPU count | §3.4, R4 | 1/2/4 GPUs, +32.5 % and +52.0 % |
+| 9 | Document CPU performance | §3.3, R3 | server group 28 % → 144 % of one core |
+| 10 | Evaluate parallelism options | §3.4, R4 | tp = 1/2/4 and pp = 2 at 2 GPUs |
+| 11 | Determine bottlenecks | §4, R5 | memory controller 93.6 % → 39.5 % |
+| 12 | Generate figures | R1–R5 | 5 here, 13 in the attached paper |
 
 # 1. Setup and instrumentation
 
@@ -113,9 +119,9 @@ hand-off from frontend to engine, and any wait before the request
 reaches the scheduler. I did not measure which of these dominates;
 separating them would need a timestamp at each hand-off. The same split
 holds for the two fixed-length workloads — 33 % on the prefill-heavy
-mix and 45 % on the decode-heavy one (Figure R2).
+mix and 45 % on the decode-heavy one (Figure R1).
 
-![**Figure R2.** What the client's wait is made of, for the two fixed-length workloads. The server records only the queue and prefill intervals; the remaining 33 % and 45 % span HTTP, serialisation, tokenisation and the path to the engine.](../figures/fig13_ttft_decomposition.png){width=55%}
+![**Figure R1.** What the client's wait is made of, for the two fixed-length workloads. The server records only the queue and prefill intervals; the remaining 33 % and 45 % span HTTP, serialisation, tokenisation and the path to the engine.](../figures/fig13_ttft_decomposition.png){width=45%}
 
 That share grows as the model gets smaller. On the 0.5B model it is
 48 % at rate 1, 59 % at rate 8, and 71 % at rate 32, because the prefill
@@ -166,7 +172,7 @@ series never flattens within the grid — it still climbs 5.0 % from rate
 
 So I measured capacity a different way. In a closed-loop run the number
 of in-flight requests is fixed, so every point has a steady state and
-the latency-throughput trade-off can be read directly (Figure R3).
+the latency-throughput trade-off can be read directly (Figure R2).
 Doubling the concurrency limit from 1 up to 32 buys 62-95 % more
 throughput for 2-12 % more p95 latency. From 32 to 64 the two come into
 balance, 14.5 % against 10.3 %. From 64 to 128 throughput gains 0.9 %
@@ -176,7 +182,7 @@ workload's mean output length of 191.6 tokens. That the open loop is
 still climbing at 3.54 req/s is consistent with the same ceiling
 approached from the other side.
 
-![**Figure R3.** Closed-loop latency-throughput trade-off (7B, ShareGPT, one GPU). Each point is one concurrency limit; the knee falls between 32 and 64.](../figures/fig10_closed_loop_tradeoff.png){width=75%}
+![**Figure R2.** Closed-loop latency-throughput trade-off (7B, ShareGPT, one GPU). Each point is one concurrency limit; the knee falls between 32 and 64.](../figures/fig10_closed_loop_tradeoff.png){width=55%}
 
 ## 3.2 Dataset
 
@@ -184,8 +190,12 @@ I used two workloads with deliberately opposite properties. ShareGPT is
 a public collection of real conversations with dialogue models, so
 prompt lengths vary the way they would in production; it gives external
 validity but cannot be controlled. The random workload is generated by
-vLLM's own benchmark harness with input and output lengths fixed, which
-is unrealistic but lets me vary one thing at a time. Since prefill work
+vLLM's own benchmark harness with input and output lengths fixed; it
+trades the realism of the length distribution for control, letting me
+vary one variable at a time, and its fixed shapes stand in for realistic
+regimes — 256/128 for a short chat turn, and the 512/128 and 128/512
+variants below for summarisation- and generation-style traffic. Since
+prefill work
 is proportional to prompt length, the length distribution is itself an
 experimental variable, not a background detail.
 
@@ -199,9 +209,10 @@ a fixed 256 for random; outputs average 191.6 tokens against a fixed
 128. I recorded the source file's SHA-256 so the sampling can be
 reproduced.
 
-The two workloads differ substantially in what the server delivers:
-random was still climbing at an offered rate of 20, reaching
-12.10 req/s, where ShareGPT reached 3.54 req/s at rate 8. That is more
+The two workloads differ substantially in what the server delivers. At
+the matched rate of 8, random already produces more output — 874
+against 675 tok/s — and it was still climbing at an offered rate of 20,
+reaching 12.10 req/s, where ShareGPT reached 3.54 req/s at rate 8. That is more
 than threefold, but it bounds the combined effect of prompt and output
 length rather than separating them, and no closed-loop sweep was run for
 random, so its steady-state ceiling is unmeasured.
@@ -244,17 +255,17 @@ What makes the small model interesting is that it stops being limited by
 the GPU. At rate 8 the 7B model runs the GPU at 88.8 % utilisation and
 the memory controller at 94.2 %. The 0.5B model reaches only 54.9 % and
 39.3 %, and raising the rate to 32 leaves those at 53.3 % and 38.8 %
-(Figure R4, left). Nearly half the GPU stays unused no matter how hard I
+(Figure R3, left). Nearly half the GPU stays unused no matter how hard I
 push. Power says the same thing: 173-182 W against 273 W, a 100 W gap
 that is computation not being performed.
 
-![**Figure R4.** Resource use against arrival rate for the two model sizes. Left: GPU and memory-controller utilisation. Right: CPU summed over server and client processes, in percent of one core.](../figures/fig09_resources_vs_rate.png)
+![**Figure R3.** Resource use against arrival rate for the two model sizes. Left: GPU and memory-controller utilisation. Right: CPU summed over server and client processes, in percent of one core.](../figures/fig09_resources_vs_rate.png)
 
 The CPU side moves in the opposite direction. Summed over the processes
 belonging to the server, CPU usage for the 7B model rises only from
 28.1 % of one core at rate 1 to 39.4 % at rate 8. For the 0.5B model it
 starts at 65.3 %, reaches 120.8 % at rate 8, and peaks at 144.4 % at
-rate 24 (Figure R4, right). Values above 100 % mean the group spans more
+rate 24 (Figure R3, right). Values above 100 % mean the group spans more
 than one core; vLLM V1 runs at least a frontend and an engine-core
 process, so this is an aggregate, not a single-threaded figure.
 
@@ -288,10 +299,10 @@ on what the same GPUs could achieve.
 
 The gain is not spread evenly over the two phases. At rate 5, tp=2 cuts
 mean decode time per request by 28.5 % but prefill by only 13.2 %; at
-tp=4 the figures are 42.5 % and 16.9 % (Figure R5). Tensor parallelism
+tp=4 the figures are 42.5 % and 16.9 % (Figure R4). Tensor parallelism
 is mostly a decode optimisation. §4 explains why.
 
-![**Figure R5.** Which phase each parallelism strategy shortens (7B, ShareGPT). Left: mean prefill and decode time per request at rate 5. Right: the same change against tp=1 across the rate grid; hollow markers are prefill, filled are decode.](../figures/fig12_parallelism_phases.png)
+![**Figure R4.** Which phase each parallelism strategy shortens (7B, ShareGPT). Left: mean prefill and decode time per request at rate 5. Right: the same change against tp=1 across the rate grid; hollow markers are prefill, filled are decode.](../figures/fig12_parallelism_phases.png)
 
 Holding the device count at two and changing only the strategy separates
 throughput from latency completely. Pipeline parallelism converts none
@@ -342,13 +353,13 @@ tp=4. Sharding does not process more requests at once.
 What it does is process them faster, and the step-axis log shows by how
 much. At rate 8, decode-only steps fall from 32.27 ms at tp=1 to
 17.95 ms at tp=4, a factor of 1.80. Steps carrying prefill fall from
-72.34 ms to 57.33 ms, a factor of only 1.26 (Figure R6, left). The same
+72.34 ms to 57.33 ms, a factor of only 1.26 (Figure R5, left). The same
 configuration change helps one phase far more than the other.
 
-![**Figure R6.** Step-level view of why tensor parallelism helps. Left: step time by phase at rate 8. Centre: decode step time by batch size. Right: step time and throughput gain against arrival rate.](../figures/fig11_step_parallelism.png)
+![**Figure R5.** Step-level view of why tensor parallelism helps. Left: step time by phase at rate 8. Centre: decode step time by batch size. Right: step time and throughput gain against arrival rate.](../figures/fig11_step_parallelism.png)
 
-The resource log explains the asymmetry. Across the same tp sweep, GPU
-utilisation barely moves — 87.9 % at tp=1 against 82.1 % at tp=4 — while
+The resource measurements are consistent with a memory-side explanation for this asymmetry. 
+Across the same tp sweep, GPU utilisation barely moves — 87.9 % at tp=1 against 82.1 % at tp=4 — while
 memory-controller utilisation falls from 93.6 % to 39.5 %, and power
 from 285 W to 187 W. Sharding relieves the memory side and leaves the
 compute side where it was. This matches the standard account: decode
@@ -364,7 +375,7 @@ The same principle predicts two further observations, and both hold.
 First, the gain shrinks as batches grow, because a larger decode batch
 spreads one weight read over more tokens and so behaves more like
 prefill: the tp=4 speedup falls from 2.29x at batches of 4-8 to 1.48x
-at 32-64 (Figure R6, centre). Second, pipeline parallelism does not
+at 32-64 (Figure R5, centre). Second, pipeline parallelism does not
 help decode at all. Splitting the model by stages leaves every weight
 on exactly one GPU, so each device still streams its own share once per
 step; measured change in decode time is -1.7 %, within tolerance of
