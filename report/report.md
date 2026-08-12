@@ -37,7 +37,7 @@ one CPU core. Sections 3.3 and 4 work through this.
 | # | Requirement | Where | Key number |
 |:--|:-----------------------------|:---------|:------------------------------|
 | 1 | Deploy vLLM; recompile | §1 | fork of 702f4814, 3 files, ~190 lines |
-| 2 | Instrument latency and throughput | §1, §3.1, R1 | 51,808 request + 756,661 step records |
+| 2 | Instrument latency and throughput | §1, §3.1 | 51,808 request + 756,661 step records |
 | 3 | Prefill: time and resource use | §2, §4, R2, R6 | 0.30–1.94 % of e2e; step 1.26× at tp=4 |
 | 4 | Decode: time and resource use | §2, §4, R2, R6 | 98.7 % of e2e; step 1.80× at tp=4 |
 | 5 | Two documented datasets | §3.2 | ShareGPT p95 767 tok vs random 256 |
@@ -47,7 +47,7 @@ one CPU core. Sections 3.3 and 4 work through this.
 | 9 | Document CPU performance | §3.3, R4 | server group 28 % → 144 % of one core |
 | 10 | Evaluate parallelism options | §3.4, R5 | tp = 1/2/4 and pp = 2 at 2 GPUs |
 | 11 | Determine bottlenecks | §4, R6 | memory controller 93.6 % → 39.5 % |
-| 12 | Generate figures | R1–R6 | 6 here, 12 in the attached paper |
+| 12 | Generate figures | R2–R6 | 5 here, 12 in the attached paper |
 
 # 1. Setup and instrumentation
 
@@ -64,7 +64,7 @@ recalculating them. This keeps the risk of introducing timing bugs low
 and makes the output cross-checkable against vLLM's own Prometheus
 histograms.
 
-The instrumentation has three layers (Figure R1), and the split matters.
+The instrumentation has three layers, and the split matters.
 Chunked prefill is always on in vLLM V1, so a single engine step can
 contain some requests doing prefill and others decoding. A phase is a
 property of a request; a step is a unit of batching. Neither view alone
@@ -174,6 +174,8 @@ workload's mean output length of 191.6 tokens. That the open loop is
 still climbing at 3.54 req/s is consistent with the same ceiling
 approached from the other side.
 
+![**Figure R3.** Closed-loop latency-throughput trade-off (7B, ShareGPT, one GPU). Each point is one concurrency limit; the knee falls between 32 and 64.](../figures/fig10_closed_loop_tradeoff.png){width=75%}
+
 ## 3.2 Dataset
 
 I used two workloads with deliberately opposite properties. ShareGPT is
@@ -244,6 +246,8 @@ the memory controller at 94.2 %. The 0.5B model reaches only 54.9 % and
 push. Power says the same thing: 173-182 W against 273 W, a 100 W gap
 that is computation not being performed.
 
+![**Figure R4.** Resource use against arrival rate for the two model sizes. Left: GPU and memory-controller utilisation. Right: CPU summed over server and client processes, in percent of one core.](../figures/fig09_resources_vs_rate.png)
+
 The CPU side moves in the opposite direction. Summed over the processes
 belonging to the server, CPU usage for the 7B model rises only from
 28.1 % of one core at rate 1 to 39.4 % at rate 8. For the 0.5B model it
@@ -285,6 +289,8 @@ mean decode time per request by 28.5 % but prefill by only 13.2 %; at
 tp=4 the figures are 42.5 % and 16.9 % (Figure R5). Tensor parallelism
 is mostly a decode optimisation. §4 explains why.
 
+![**Figure R5.** Which phase each parallelism strategy shortens (7B, ShareGPT). Left: mean prefill and decode time per request at rate 5. Right: the same change against tp=1 across the rate grid; hollow markers are prefill, filled are decode.](../figures/fig12_parallelism_phases.png)
+
 Holding the device count at two and changing only the strategy separates
 throughput from latency completely. Pipeline parallelism converts none
 of the second GPU into throughput: across 23 seed-matched pairs the mean
@@ -318,6 +324,7 @@ which metric matters. If the goal is serving more requests with the same
 hardware, only tensor parallelism does that. If the goal is a faster
 first token, either works.
 
+
 # 4. Bottlenecks
 
 Tensor parallelism raises throughput by up to 52 %. The obvious
@@ -335,6 +342,8 @@ much. At rate 8, decode-only steps fall from 32.27 ms at tp=1 to
 17.95 ms at tp=4, a factor of 1.80. Steps carrying prefill fall from
 72.34 ms to 57.33 ms, a factor of only 1.26 (Figure R6, left). The same
 configuration change helps one phase far more than the other.
+
+![**Figure R6.** Step-level view of why tensor parallelism helps. Left: step time by phase at rate 8. Centre: decode step time by batch size. Right: step time and throughput gain against arrival rate.](../figures/fig11_step_parallelism.png)
 
 The resource log explains the asymmetry. Across the same tp sweep, GPU
 utilisation barely moves — 87.9 % at tp=1 against 82.1 % at tp=4 — while
