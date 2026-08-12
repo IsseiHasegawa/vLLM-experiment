@@ -119,13 +119,54 @@ I1/I2 metric reversal: total token throughput +35% vs output 3.0x. -->
 
 ## 3.3 Model size and CPU
 
-<!-- ~0.5p. Fig R4 = paper Fig 13.
-14:1 parameter ratio but TTFT p95 2.9x vs TPOT p95 5.8x -> phase-dependent.
-0.5B: SM 54.9%, memory controller 39.3% at rate 8 -> GPU half idle,
-while server-side process group 65.3% -> 144.4% of one core.
-System-wide CPU 5-8% -> framework-bound, not CPU-exhausted. -->
+Qwen2.5-7B and Qwen2.5-0.5B differ by 14:1 in parameter count, but
+neither phase scales by that ratio, and the two phases do not scale
+alike. At rate 1, TTFT p95 is 151 ms against 52 ms — a factor of 2.9 —
+while TPOT p95 is 34.8 ms against 6.1 ms, a factor of 5.8. Decode
+tracks model size far more closely than TTFT does, which follows from §2:
+TTFT carries a component outside the server-recorded interval that
+reaches 48-71 % on the 0.5B model, and that component does not shrink
+when the model does.
 
-## 3.4 GPU count and parallelism strategy
+The two models also respond to load differently. TTFT p95 for the 0.5B
+model stays flat at 51-53 ms from rate 1 to rate 8, where the 7B model
+climbs from 151 ms to 245 ms. The 0.5B model only starts responding at
+rate 12 and above, reaching 78 ms at rate 32. Because the two were swept
+over different rate grids, figures up to rate 8 are a like-for-like
+comparison and anything beyond that describes the 0.5B model alone. Peak
+output throughput is 675 tok/s for the 7B at rate 8 against 3,371 tok/s
+for the 0.5B at rate 32, a factor of 5.0.
+
+What makes the small model interesting is that it stops being limited by
+the GPU. At rate 8 the 7B model runs the GPU at 88.8 % utilisation and
+the memory controller at 94.2 %. The 0.5B model reaches only 54.9 % and
+39.3 %, and raising the rate to 32 leaves those at 53.3 % and 38.8 %
+(Figure R4, left). Nearly half the GPU stays unused no matter how hard I
+push. Power says the same thing: 173-182 W against 273 W, a 100 W gap
+that is computation not being performed.
+
+The CPU side moves in the opposite direction. Summed over the processes
+belonging to the server, CPU usage for the 7B model rises only from
+28.1 % of one core at rate 1 to 39.4 % at rate 8. For the 0.5B model it
+starts at 65.3 %, reaches 120.8 % at rate 8, and peaks at 144.4 % at
+rate 24 (Figure R4, right). Values above 100 % mean the group spans more
+than one core; vLLM V1 runs at least a frontend and an engine-core
+process, so this is an aggregate, not a single-threaded figure.
+
+This is not the machine running out of CPU. System-wide usage stayed
+between 5 % and 8 % throughout, on a 96-core host, so 1.4
+core-equivalents leaves plenty of headroom. What it shows is that
+host-side work in the serving layer — scheduling, tokenisation, HTTP
+handling, and the hand-offs between them — grows into the space a short
+model step leaves. The step-axis log agrees: scheduling takes 2.2 % of
+per-step time for the 7B model at rate 8 (0.801 ms against 36.17 ms of
+execution), 5.4 % for the 0.5B model, and 8.2 % at rate 32. The shorter
+the model step, the larger the fixed serving cost looms.
+
+I did not resolve which part of that work is the constraint — the CPU
+counter is an aggregate over processes, and a profile would be needed to
+separate them. The regime is framework-bound rather than CPU-bound, and
+it is the reason §4 ends by saying the limiting resource is not fixed.
 
 ## 3.4 GPU count and parallelism strategy
 
