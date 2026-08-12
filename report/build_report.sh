@@ -9,6 +9,7 @@ pandoc report.md \
   --csl=ieee.csl \
   -M link-citations=true \
   --pdf-engine=xelatex \
+  --include-in-header=header.tex \
   -V geometry:margin=0.9in \
   -V fontsize=10pt \
   -V linkcolor=blue \
