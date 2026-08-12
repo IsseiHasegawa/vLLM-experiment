@@ -32,7 +32,7 @@ much as tensor parallelism does.
 The limiting resource is not the same in every configuration. On the 7B
 model the GPU memory controller is busy 94 % of the time; on the 0.5B
 model the GPU sits half idle while the serving-layer processes exceed
-one CPU core. Section 4 works through this.
+one CPU core. Sections 3.3 and 4 work through this.
 
 | # | Requirement | Where | Key number |
 |:--|:-----------------------------|:---------|:------------------------------|
@@ -110,18 +110,61 @@ Session D cross-host, +-3% tolerance. -->
 
 # 4. Bottlenecks
 
-<!-- ~0.75p, the core of the report. Fig R6 = paper Fig 12.
-Chain: KV hypothesis rejected (2.13% at rate 8, falls to 0.33% at tp=4)
--> decode batch constant across tp (22.9 / 22.3 / 21.7)
--> shorter steps instead: decode-only 32.27 -> 17.95 ms (1.80x),
-prefill-carrying 72.34 -> 57.33 ms (1.26x)
--> resource log agrees: SM 87.9 -> 82.1% but memory controller
-93.6 -> 39.5%, power 285 -> 187 W
--> arithmetic: 15.2 GB weights / 696 GB/s = 21.8 ms = 68% of the tp=1 step
--> batch dependence: 2.29x (batch 4-8) down to 1.48x (32-64)
--> residual after weight transfer grows 10.43 -> 12.49 ms = diminishing return.
-Closing: the limiting resource is not fixed -- memory bandwidth on 7B,
-serving layer on 0.5B (see section 3.3). This is the RQ4 answer. -->
+Tensor parallelism raises throughput by up to 52 %. The obvious
+explanation is KV cache capacity: more GPUs means more room for
+concurrent requests, so batches grow and each step does more work. The
+measurement rules this out. At rate 8 on one GPU, KV utilisation
+averaged 2.13 % per step and peaked at 6.43 %. It does not rise with
+more GPUs either — it falls, to 0.77 % at tp=2 and 0.33 % at tp=4. A
+resource that is 97 % free is not the constraint. The decode batch size
+confirms it: 22.9 requests per step at tp=1, 22.3 at tp=2, 21.7 at
+tp=4. Sharding does not process more requests at once.
+
+What it does is process them faster, and the step-axis log shows by how
+much. At rate 8, decode-only steps fall from 32.27 ms at tp=1 to
+17.95 ms at tp=4, a factor of 1.80. Steps carrying prefill fall from
+72.34 ms to 57.33 ms, a factor of only 1.26 (Figure R6, left). The same
+configuration change helps one phase far more than the other.
+
+The resource log explains the asymmetry. Across the same tp sweep, GPU
+utilisation barely moves — 87.9 % at tp=1 against 82.1 % at tp=4 — while
+memory-controller utilisation falls from 93.6 % to 39.5 %, and power
+from 285 W to 187 W. Sharding relieves the memory side and leaves the
+compute side where it was. This matches the standard account: decode
+reads every weight to produce one token per request and is limited by
+memory bandwidth, while prefill processes hundreds of tokens per step
+and amortises that read, so it is limited by arithmetic instead. The
+arithmetic agrees. The 7B model's bf16 weights total 15.2 GB, and the
+A40 moves 696 GB/s, so streaming the weights once takes 21.8 ms — 68 %
+of the 32.27 ms step at tp=1. At tp=4 each GPU holds 3.8 GB, so that
+term drops to 5.5 ms, only 30 % of the measured 17.95 ms.
+
+The same principle predicts two further observations, and both hold.
+First, the gain shrinks as batches grow, because a larger decode batch
+spreads one weight read over more tokens and so behaves more like
+prefill: the tp=4 speedup falls from 2.29x at batches of 4-8 to 1.48x
+at 32-64 (Figure R6, centre). Second, pipeline parallelism does not
+help decode at all. Splitting the model by stages leaves every weight
+on exactly one GPU, so each device still streams its own share once per
+step; measured change in decode time is -1.7 %, within tolerance of
+zero, against -28.5 % for tensor parallelism at the same device count.
+
+Diminishing returns come from the part sharding cannot divide.
+Subtracting the theoretical weight-transfer time from the step time
+leaves 10.43 ms at tp=1, 11.35 ms at tp=2, and 12.49 ms at tp=4. The
+weight term falls exactly in proportion to the shard count; the
+remainder does not fall at all, it grows by 20 %. That remainder is not
+purely communication — at tp=1 there is no inter-GPU traffic and it is
+already 10.43 ms, so it also holds attention compute, kernel launches,
+and framework overhead. But its share rises with every doubling, which
+is why the gain from two to four GPUs (14.7 %) is less than half the
+gain from one to two (32.5 %).
+
+Finally, the limiting resource is not fixed. Everything above concerns
+the 7B model, where the memory controller is busy 94 % of the time. On
+the 0.5B model the same counter reads 39 %, the GPU sits half idle, and
+the serving-layer processes exceed one CPU core instead (§3.3). The
+model is no longer what the server is waiting for.
 
 # 5. Limitations and reproduction
 
