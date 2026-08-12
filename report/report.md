@@ -62,10 +62,37 @@ Pointer to paper section 3. -->
 
 # 2. Where the time goes: prefill vs decode
 
-<!-- ~0.5p. Fig R2 = paper Fig 6 right panel (TTFT decomposition).
-prefill 0.30-1.94% of e2e at every finite rate, 2.7% only in offline burst.
-Client TTFT: 38% unattributed on 7B at rate 5; 48-71% on 0.5B, rising with rate.
-Closing bridge sentence: which resource limits each phase -> section 4. -->
+The two phases are wildly unequal in wall-clock terms. For ShareGPT at
+rate 5, a request spends 7,334 ms of its 7,434 ms end-to-end time in
+decode and 69 ms in prefill — 0.93 %. This is not an artefact of the
+workload: with a prefill-heavy mix (512 in, 128 out) the prefill share
+rises only to 1.94 %, and with a decode-heavy mix (128 in, 512 out) it
+falls to 0.30 %. Across every finite rate and every group I measured,
+prefill stayed under 2 % of end-to-end time. It reaches 2.7 % only in
+the offline burst, where all 200 requests arrive at once.
+
+Prefill still matters, because it is what the user waits for before the
+first token appears. But most of that wait is not prefill compute
+either. For the 7B model at rate 5, the client observes a mean TTFT of
+111.6 ms, while the queue and prefill intervals the server records total
+69.0 ms. The remaining 38 % happens somewhere the instrumentation does
+not reach (Figure R2): HTTP receipt and response, serialisation,
+tokenisation, the hand-off from frontend to engine, and any wait before
+the request reaches the scheduler. I did not measure which of these
+dominates; separating them would need a timestamp at each hand-off.
+
+That share grows as the model gets smaller. On the 0.5B model it is
+48 % at rate 1, 59 % at rate 8, and 71 % at rate 32, because the prefill
+interval itself stays flat — 17.2 ms down to 14.4 ms — while the
+client-observed TTFT climbs from 33.1 ms to 49.2 ms. For a small model,
+then, most of the room for improving TTFT is outside the model
+computation.
+
+Two things follow for the rest of this report. Since decode dominates
+request time, anything that changes overall throughput has to act on
+decode; §3.4 shows that only one of the two parallelism strategies
+does. And since the phases differ this much in structure, they are
+limited by different resources — which is what §4 works out.
 
 # 3. Factor analysis
 
@@ -100,13 +127,56 @@ System-wide CPU 5-8% -> framework-bound, not CPU-exhausted. -->
 
 ## 3.4 GPU count and parallelism strategy
 
-<!-- ~0.75p. Fig R5 = paper Fig 10.
-tp: +32.5% at rate 8 (2 GPUs), +52.0% (4 GPUs), increment falls to 14.7%.
-Phase-selective at rate 5: decode -28.5% vs prefill -13.2% (tp=2).
-pp=2 at same device count: throughput -0.3% (t = -0.43, 23 seed-matched
-pairs) but TTFT p95 -12.0% (t = -12.1), on par with tp=2's -10.0%.
-One sentence each: NCCL p2p and custom all-reduce disabled -> lower bound;
-Session D cross-host, +-3% tolerance. -->
+## 3.4 GPU count and parallelism strategy
+
+Adding GPUs raises throughput, but with a clear diminishing return. At
+rate 8, two GPUs deliver 32.5 % more than one and four deliver 52.0 %,
+so the second doubling is worth less than half the first (14.7 %). Per
+GPU the picture is starker: 3.51 req/s at tp=1, 2.33 at tp=2, and 1.34
+at tp=4. All three series were measured on the same four-GPU machine
+with only the parallelism setting changed, so host differences cannot
+contribute. Two caveats apply throughout. This host has no NVLink, and
+NCCL peer-to-peer transport and the custom all-reduce kernel had to be
+disabled for the communicator to start at all, so these are lower bounds
+on what the same GPUs could achieve.
+
+The gain is not spread evenly over the two phases. At rate 5, tp=2 cuts
+mean decode time per request by 28.5 % but prefill by only 13.2 %; at
+tp=4 the figures are 42.5 % and 16.9 % (Figure R5). Tensor parallelism
+is mostly a decode optimisation. §4 explains why.
+
+Holding the device count at two and changing only the strategy separates
+throughput from latency completely. Pipeline parallelism converts none
+of the second GPU into throughput: across 23 seed-matched pairs the mean
+difference against a single GPU is −0.3 %, with t = −0.43. Individual
+points swing by up to ±9.2 %, but the sign is inconsistent, whereas
+tensor parallelism is positive at all 23 points in the same test. On
+throughput, then, the second GPU is worth 32.5 % under tp=2 and nothing
+under pp=2.
+
+Latency goes the other way. TTFT p95 under pp=2 falls below the
+single-GPU baseline at all 20 seed-matched points, averaging −12.0 %
+(t = −12.1) — on par with the −10.0 % that tp=2 achieves. The mean
+TTFT moves by a similar −11.9 %, so this is not a tail effect. The
+instrumented prefill interval accounts for under half of it: 7.4 ms of
+the 15.9 ms reduction at rate 5, with the rest coming from the
+unattributed interval of §2, which shrinks from 44.1 ms to 35.6 ms.
+Running two worker processes instead of one plausibly changes contention
+on the frontend path, but this instrumentation cannot resolve that.
+
+One caveat is specific to this comparison. The pp=2 runs were measured
+in a separate session on a different host, matched in GPU model, driver,
+CPU and interconnect class, but not anchored by a repeated condition as
+the other sessions were. A single boot warm-up puts that host about 3 %
+faster, so I treat ±3 % as the working tolerance here. The prefill and
+TTFT reductions exceed it by a factor of three or more and survive. The
+decode change of −1.7 % does not, which is why §4 reads it as "no
+effect" rather than a small one.
+
+So the two strategies are not interchangeable, and the choice depends on
+which metric matters. If the goal is serving more requests with the same
+hardware, only tensor parallelism does that. If the goal is a faster
+first token, either works.
 
 # 4. Bottlenecks
 
