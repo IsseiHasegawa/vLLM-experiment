@@ -51,14 +51,51 @@ one CPU core. Sections 3.3 and 4 work through this.
 
 # 1. Setup and instrumentation
 
-<!-- ~0.5p. Fig R1 = flat-style instrumentation diagram (redrawn).
-fork 702f4814 / 3 files ~190 lines / editable install.
-Three layers: request axis, step axis, 1 Hz external logger.
-Verification, one sentence each:
-prefill_s + decode_s = inference_s over all records;
-Prometheus agreement (72.04 / 238.24 / 2135.56 ms);
-C1 on/off = +2.97% latency, -0.26% throughput, not significant (n=3).
-Pointer to paper section 3. -->
+I forked vLLM at commit 702f4814 and built it from source with an
+editable install, so that changing a file and restarting the server is a
+one-step operation. All measurement changes live on an `instrumentation`
+branch: three files, about 190 lines. No inference path was modified.
+
+The design principle was to write out numbers vLLM already computes
+rather than add new timers. The V1 metrics layer already holds the
+queued, prefill and decode intervals for each request when it builds
+`FinishedRequestStats`; the patch serialises those to JSONL instead of
+recalculating them. This keeps the risk of introducing timing bugs low
+and makes the output cross-checkable against vLLM's own Prometheus
+histograms.
+
+The instrumentation has three layers (Figure R1), and the split matters.
+Chunked prefill is always on in vLLM V1, so a single engine step can
+contain some requests doing prefill and others decoding. A phase is a
+property of a request; a step is a unit of batching. Neither view alone
+can separate time and resource use by phase, so I log both:
+
+- **Request axis** (`requests.jsonl`) — queued, prefill, decode,
+  inference and end-to-end time per request, with token counts.
+- **Step axis** (`steps.jsonl`) — scheduling and execution time per
+  engine step, batch composition, and KV cache usage.
+- **Resource layer** — an external process sampling GPU counters and
+  per-process CPU at 1 Hz, outside the server, so it is independent of
+  the code being measured.
+
+Three checks support the numbers that follow. The identity
+`prefill + decode = inference` holds for every record. Against
+Prometheus, the queued, prefill and decode means agree exactly (72.04,
+238.24 and 2,135.56 ms), and token counts match on both axes. Finally,
+because the logger is switched on by an environment variable, I could
+run the same binary with instrumentation off: latency was 2.97 % lower
+and throughput 0.26 % higher without it, and with three seed pairs
+neither difference reaches significance (smallest p = 0.125). That
+bounds the overhead as small but does not pin it precisely.
+
+Two limitations belong here. Session D, which measured pipeline
+parallelism, produces no step-axis log at all: vLLM's pipeline executor
+takes a different step path that the patch does not hook, so §3.4 and
+§4 rest on request-axis data for pp=2. And the client-observed TTFT
+contains an interval the server never sees, which §2 takes up next.
+
+Full details of the patch, the run matrix and the validity checks are in
+the attached paper, §3.
 
 # 2. Where the time goes: prefill vs decode
 
