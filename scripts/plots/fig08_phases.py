@@ -151,5 +151,51 @@ def fig08(runs, outdir, groups=("I1", "I2"),
     fig.tight_layout()
     return save(fig, "fig08_phase_breakdown", outdir)
 
+def fig13(runs, outdir, groups=("I1", "I2"),
+          labels=("prefill-heavy\n512 in / 128 out",
+                  "decode-heavy\n128 in / 512 out")):
+    """Right panel of fig08 as a standalone figure, for the short report."""
+    fig, ax = plt.subplots(figsize=(5.2, 4.0))
 
-ALL = {8: fig08}
+    names, qs, ps, eps = [], [], [], []
+    for g, lab in zip(groups, labels):
+        s = _ttft_split(runs, g)
+        if s is None:
+            continue
+        client, q, p = s
+        names.append(lab)
+        qs.append(q)
+        ps.append(p)
+        eps.append(max(client - q - p, 0.0))
+
+    if not names:
+        ax.text(0.5, 0.5, "no TTFT decomposition data", ha="center",
+                transform=ax.transAxes, color=C["grey"])
+        ax.set_axis_off()
+        fig.tight_layout()
+        return save(fig, "fig13_ttft_decomposition", outdir)
+
+    x = range(len(names))
+    ax.bar(x, qs, 0.5, label="server: queued", color=C["grey"])
+    ax.bar(x, ps, 0.5, bottom=qs, label="server: prefill", color=C["blue"])
+    bot = [a + b for a, b in zip(qs, ps)]
+    ax.bar(x, eps, 0.5, bottom=bot,
+           label="outside the server-recorded interval", color=C["red"])
+    for i in range(len(names)):
+        total = qs[i] + ps[i] + eps[i]
+        if total:
+            ax.text(i, bot[i] + eps[i] / 2, f"{100 * eps[i] / total:.0f}%",
+                    ha="center", va="center", color="white", fontsize=9)
+    ax.set_xticks(list(x))
+    ax.set_xticklabels(names)
+    ax.set_ylabel("Client-observed TTFT (ms)")
+    ax.set_title("What the client's wait is made of\n"
+                 "(Qwen2.5-7B, 1 GPU, rate 5)", fontsize=10)
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.14),
+              fontsize=8, frameon=False, ncol=1)
+    ax.set_ylim(0, max(q + pp + e for q, pp, e in zip(qs, ps, eps)) * 1.12)
+
+    fig.tight_layout()
+    return save(fig, "fig13_ttft_decomposition", outdir)
+
+ALL = {8: fig08, 13: fig13}
