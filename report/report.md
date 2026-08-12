@@ -26,8 +26,8 @@ Prefill compute itself never exceeded 2 % of end-to-end time.
 makes decode-only steps 1.80x faster but steps carrying prefill only
 1.26x faster. Holding the device count at two and changing only the
 strategy separates the effect: pipeline parallelism turns none of the
-second GPU into throughput (-0.3 %) yet cuts TTFT p95 by 12 %, about as
-much as tensor parallelism does.
+second GPU into throughput (-0.3 %) yet cuts TTFT p95 by 12 % against
+one GPU, about as much as tensor parallelism does.
 
 The limiting resource is not the same in every configuration. On the 7B
 model the GPU memory controller is busy 94 % of the time; on the 0.5B
@@ -153,7 +153,8 @@ step rather than holding it until capacity frees, so backlog appears as
 a larger batch instead. The decode batch grows from 6.0 requests per
 step at rate 1 to 18.8 at rate 4 and 23.0 at rate 8, with the maximum
 reaching 76. Note that this covers the scheduler only — as §2 showed,
-38 % of the client's wait happens before the request gets there.
+38 % of the client's wait falls outside the intervals the server records
+at all.
 
 This has a practical consequence: achieved throughput is a weak signal
 for saturation. It also depends on how you define it. Counting
@@ -296,16 +297,16 @@ is mostly a decode optimisation. §4 explains why.
 Holding the device count at two and changing only the strategy separates
 throughput from latency completely. Pipeline parallelism converts none
 of the second GPU into throughput: across 23 seed-matched pairs the mean
-difference against a single GPU is −0.3 %, with t = −0.43. Individual
+difference against a single GPU is -0.3 %, with t = -0.43. Individual
 points swing by up to ±9.2 %, but the sign is inconsistent, whereas
 tensor parallelism is positive at all 23 points in the same test. On
 throughput, then, the second GPU is worth 32.5 % under tp=2 and nothing
 under pp=2.
 
 Latency goes the other way. TTFT p95 under pp=2 falls below the
-single-GPU baseline at all 20 seed-matched points, averaging −12.0 %
-(t = −12.1) — on par with the −10.0 % that tp=2 achieves. The mean
-TTFT moves by a similar −11.9 %, so this is not a tail effect. The
+single-GPU baseline at all 20 seed-matched points, averaging -12.0 %
+(t = -12.1) — on par with the -10.0 % that tp=2 achieves. The mean
+TTFT moves by a similar -11.9 %, so this is not a tail effect. The
 instrumented prefill interval accounts for under half of it: 7.4 ms of
 the 15.9 ms reduction at rate 5, with the rest coming from the
 unattributed interval of §2, which shrinks from 44.1 ms to 35.6 ms.
@@ -318,7 +319,7 @@ CPU and interconnect class, but not anchored by a repeated condition as
 the other sessions were. A single boot warm-up puts that host about 3 %
 faster, so I treat ±3 % as the working tolerance here. The prefill and
 TTFT reductions exceed it by a factor of three or more and survive. The
-decode change of −1.7 % does not, which is why §4 reads it as "no
+decode change of -1.7 % does not, which is why §4 reads it as "no
 effect" rather than a small one.
 
 So the two strategies are not interchangeable, and the choice depends on
