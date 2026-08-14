@@ -6,9 +6,6 @@ Repository: https://github.com/IsseiHasegawa/vLLM-experiment
 
 ## Abstract
 
-<!-- BUDGET 0.2p / ~150 words. Write LAST.
-Contents: what was measured, three headline numbers, one-sentence conclusion. -->
-
 Inference with a large language model splits into a prefill phase and a decode phase, and recent serving systems treat that split as a design premise. What operators observe, however, is aggregated: a latency figure carries no indication of which phase produced it, or whether the cost lay in phase computation at all. This report forks vLLM, instruments three files so that the per-phase timestamps the engine already computes are written out on a request axis and a step axis independently, and reports 232 measured runs across arrival rate, dataset, model size, GPU count and parallelism strategy.
 
 Three findings follow from the separation. First, load does not appear where an aggregate would suggest: mean scheduler queue dwell never exceeds 0.021 ms at any finite rate of the ShareGPT sweep because vLLM admits waiting requests into the running batch at the next scheduling step rather than holding them, so load appears as batch growth, achieved throughput is a weak saturation signal and capacity is better read from a closed-loop curve — here 711 tok/s, or about 3.7 req/s. Second, the client's wait is not the server's computation: 38 % of observed TTFT falls outside prefill on the 7B model at rate 5 and 48–71 % on the 0.5B, and prefill itself never exceeds 2 % of end-to-end time at any finite rate. Third, parallelism is phase-selective. Tensor parallelism shortens decode-only steps 1.80× but prefill-carrying steps only 1.26×, and the step-axis log locates the mechanism: batch size is unchanged and the KV cache sits at 2.13 % utilization, while memory-controller utilization falls from 93.6 % to 39.5 % as shards are added. Holding the device count at two and changing only the strategy separates the throughput outcome while leaving the TTFT improvement comparable — pipeline parallelism converts none of the second GPU into throughput (−0.3 %, t = −0.43 over 23 seed-matched points) yet reduces TTFT p95 as much as tensor parallelism does (−12.0 % against −10.0 %).
@@ -41,13 +38,6 @@ Serving systems layer two mechanisms on top of this structure. Continuous batchi
 Client-side metrics map onto the phases, though not exactly. TTFT (time to first token) reflects the weight of prefill, while TPOT (time per output token) and ITL (inter-token latency) reflect the speed of decode. TTFT, however, also contains queueing, HTTP transfer and tokenization, none of which is phase computation. Separating that difference is the subject of §4.2.
 
 ### 2.2 Related work
-
-<!-- ~0.5p. One paragraph. One-line attribution per citation; do not summarise papers.
-     Order: Orca (continuous batching) -> vLLM/PagedAttention (the system measured here)
-     -> Sarathi-Serve (chunked prefill) -> DistServe, Splitwise (phase asymmetry as a
-     design premise) -> Megatron-LM (tensor parallelism) -> DUCHESS, HACK (Yu group).
-     Close by stating what is NOT covered by prior work: an end-to-end phase-level
-     measurement across all five factors on a single instrumented build. -->
 
 Since Orca introduced continuous batching [@Yu2022], work on LLM serving has been concerned with holding throughput and latency together. vLLM [@Kwon2023] recast KV cache management as a virtual-memory problem and is the system measured here. Sarathi-Serve [@Agrawal2024a] addressed prefill stalling decode through chunked prefill and decode-maximal batching. DistServe [@Zhong2024] and Splitwise [@Patel2024] go further still and place the two phases on separate device pools. All of these accept the phase asymmetry as a design premise, but none takes as its subject the question of which resource that asymmetry comes from on a running server. On the parallelism side, Megatron-LM [@Shoeybi2019] established tensor parallelism and GPipe [@Huang2019] pipeline parallelism; both target training, and the phase-level effect of each at inference time is what this report measures. For classifying bottlenecks, the roofline model [@Williams2009] is the standard tool, and Yuan et al. [@Yuan2024] apply it layer by layer to LLM inference. On the evaluation side, Schroeder et al. [@Schroeder2006] showed that open-loop and closed-loop workload generation produce fundamentally different behaviour, and Etalon [@Agrawal2024b] systematizes metrics for LLM serving. From the Yu group, HACK [@Zhang2025] accelerates disaggregated inference by compressing the KV cache, and Jiang et al. [@Jiang2025] orchestrate reasoning branches within a request.
 
@@ -205,8 +195,6 @@ Two consequences follow, and both are stated where the numbers appear (§4.4). T
 
 ### 4.1 Effect of arrival rate
 
-<!-- BUDGET 0.8p. Answers RQ1. -->
-
 Within the finite-rate range, the client is able to send requests at the specified rate. The actual arrival rate, measured from the arrival timestamps, ranges from 1.00 to 8.03 req/s for requested rates of 1 to 8 req/s, confirming that the load was applied correctly.
 
 ![](../figures/fig01_ttft_vs_rate.png)
@@ -252,7 +240,6 @@ throughput, the latter counting prompt tokens as well.
 
 ### 4.2 Phase-level behaviour
 
-<!-- BUDGET 0.6p. Answers RQ1 (phase part) and feeds RQ4. -->
 
 **Phase composition.** Decoding accounts for the overwhelming majority of wall-clock time per request. For ShareGPT at rate 5, out of an end-to-end average of 7,434 ms, prefill accounts for 68.8 ms (0.93 %) and decoding accounts for 7,334 ms (98.7 %). This ratio remains consistent even when the workload is changed: it is 1.94 % for I1 (input 512 / output 128), which is prefill-heavy, and 0.30 % for I2 (input 128 / output 512), which is decoding-heavy; in both cases, prefill remains below 2 % (Figure 6, left). The same holds at every finite rate and in every group; the ratio exceeds 2 % only under the
 offline burst, where it reaches 2.7 % at tp = 4. Even when the arrival rate is increased from 1 to 8, the prefill ratio only varies from 0.86 % to 0.96 %.
@@ -276,9 +263,6 @@ The efficiency of the prefill itself also depends on the input length. The effec
 
 ### 4.3 Effect of dataset and model size
 
-<!-- BUDGET 0.5p. Answers RQ2. Figures 7 and 8 may go to the appendix if space is tight;
-     if so, keep the numbers in the text and reference the appendix figures. -->
-
 **The effect of prompt length distribution.** When compared at the same rate, the random workload has a lower TTFT. The p95 values are 109 ms vs. 151 ms (28 % lower) at rate 1, and 211 ms vs. 245 ms (14 % lower) at rate 8 (Figure 7, left). While prompts in the random workload are fixed at 256 tokens, ShareGPT has a tail where the p95 reaches 767 tokens (§3.2). Since the prefill workload is proportional to prompt length, this tail is the likely source of the higher p95 TTFT, though the dataset comparison does not isolate it from output-length effects on system load (see below). The gap narrows as the load increases: from 28 % at rate 1 to 14 % at rate 8.
 
 ![](../figures/fig04_dataset_comparison.png)
@@ -298,8 +282,6 @@ The rankings reverse for output token throughput. ShareGPT outperforms random up
 **The response to load also differs.** The p95 TTFT for 0.5B remains nearly flat at 51–53 ms from rates 1 to 8, in contrast to 7B, which rises from 151 ms to 245 ms. 0.5B begins to respond to load at rate 12 and beyond, increasing from 59 ms to 78 ms (rate 32). Since the two models were measured at different arrival rate grids (§3.3), the results up to rate 8 should be interpreted as a comparison under the same load, while those beyond that point should be interpreted as the behavior of the 0.5B model alone. The peak output throughput is 675 tok/s for the 7B at rate 8 and 3,371 tok/s for the 0.5B at rate 32, a difference of 5.0 times.
 
 ### 4.4 Effect of GPU count and parallelism strategy
-
-<!-- BUDGET 0.6p. Answers RQ3. -->
 
 **Tensor parallelism.** Increasing the number of GPUs to two improves achieved throughput by 32.5 % at rate 8 and 44.0 % at rate ∞ (Figure 9). With four GPUs, the improvements are 52.0 % at rate 8 and 55.4 % at rate ∞; however, the incremental gains from two to four GPUs are limited to 14.7 % and 7.9 %, respectively, indicating a clear diminishing return. Per GPU, achieved throughput at rate 8 falls from 3.51 req/s at tp = 1 to 2.33 req/s at tp = 2 (66 %) and 1.34 req/s at tp = 4 (38 %). G1, G2, and G4 were measured on the same instance (§3.3), and in a comparison with matched seeds, the gains for tp = 2 at rate 8 were +38.7 %, +26.1 %, and +34.2 % — all three seeds clearly positive. Note that these values were measured with NCCL peer-to-peer transfers and the custom all-reduce kernel disabled (§3.3) and represent the lower bound of achievable gains.
 
@@ -324,9 +306,6 @@ The contrast is therefore one-sided: prefill latency responds to either strategy
 logarithmic axis, annotated with the change against tp = 1; the two phases differ by two orders of magnitude, hence the log scale. Right: the same change against tp = 1 across the rate grid, hollow markers for prefill and filled for decode. The tp series is read against a shared baseline within one instance, whereas pp = 2 was measured in Session D on a separate host and carries the ±3 % tolerance established in §3.5; the prefill reduction under pp = 2 clears that tolerance while the decode change does not. Because pipeline parallelism forces vLLM onto the batch-queue execution path, Session D produces no step-axis log (§3.1), so the phase times here are request-axis quantities and the step-level decomposition in §5.2 is available for the tp series only.
 
 ### 4.5 Closed-loop behaviour
-
-<!-- BUDGET 0.4p. Completes RQ1: the steady-state view that open-loop
-     overload points cannot provide. -->
 
 In open-loop measurements, there is no steady state for arrival rates exceeding capacity (§4.1). In closed-loop measurements, where the number of in-flight requests (the concurrency limit) is fixed, each point has a steady state, allowing the trade-off between latency and throughput to be directly observed.
 
@@ -417,8 +396,6 @@ Memory-controller utilization is symmetric within each configuration (39.5 / 39.
 
 ### 5.5 CPU and framework-bound behaviour
 
-<!-- The 0.5B model reaches a framework-bound regime (D27). Per-process CPU from the
-     resource logger. This is where the task's "Document CPU performance" is answered. -->
 
 The analysis so far has concerned the 7B model. With the 0.5B model, the limiting resource changes.
 
@@ -439,17 +416,6 @@ with the proportion rising with the arrival rate. The CPU-side work measured her
 
 ## 6. Threats to Validity
 
-<!-- BUDGET 0.4p. A plain list. Honesty here is worth more than polish. -->
-
-<!--
-  - tp=2/4 measured with NCCL P2P and custom all-reduce disabled; the reported gains are
-    conservative lower bounds
-  - no NVLink on the test host; an NVLink system would likely scale differently
-  - G1_r1_rep1 returned 199/200 completions and was not re-run, by design
-  - the harness truncates ShareGPT prompts at ~1024 tokens
-  - rate=inf is not a continuation of the finite-rate series
-  - a single GPU model (A40) and a single model family (Qwen2.5)
--->
 
 **Measurement conditions.** Every tensor-parallel measurement was taken with NCCL peer-to-peer transport and the custom all-reduce kernel disabled (§3.3, D43). Both mechanisms lower communication cost, so the reported gains (+32.5 % at rate 8) are conservative lower bounds and the diminishing return observed in §5.4 may be stronger than what this hardware could achieve. The test host has no NVLink; inter-GPU paths are limited to PXB and SYS. On an NVLink system the relative standing of tensor and pipeline parallelism could differ.
 
