@@ -85,11 +85,7 @@ The nominal and realised distributions differ substantially. The harness sampler
 
 ![](../figures/fig05_dataset_distributions.png)
 
-**Figure 2.** Cumulative distribution of prompt lengths for ShareGPT and random
-(log x-axis). Solid lines are realised values taken from the phase logs; dashed
-lines are nominal values from the source file. The divergence of the two ShareGPT
-curves at 1,024 tokens is caused by the benchmark harness sampler, which does
-not admit longer prompts. The random workload is fixed-length and therefore renders as a vertical step in the CDF.
+**Figure 2.** Cumulative distributions of token length for ShareGPT and random (log x-axis). Left: input (prompt) length; right: output length, whose summary statistics are printed below the panels. Solid lines are nominal values from the source file; the thicker pale dashed lines are realised values taken from the phase logs. In the left panel the two ShareGPT curves diverge at 1,024 tokens, because the benchmark harness sampler does not admit longer prompts. The random workload is fixed-length on both axes (256 in / 128 out) and therefore renders as a vertical step in each panel.
 
 | Dataset | Source | Input p50 | p95 | max |
 |:---------|:-----------------------------------|----------:|------:|-------:|
