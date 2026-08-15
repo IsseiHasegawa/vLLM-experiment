@@ -412,7 +412,6 @@ with the proportion rising with the arrival rate. The CPU-side work measured her
 
 ## 6. Threats to Validity
 
-
 **Measurement conditions.** Every tensor-parallel measurement was taken with NCCL peer-to-peer transport and the custom all-reduce kernel disabled (§3.3, D43). Both mechanisms lower communication cost, so the reported gains (+32.5 % at rate 8) are conservative lower bounds and the diminishing return observed in §5.4 may be stronger than what this hardware could achieve. The test host has no NVLink; inter-GPU paths are limited to PXB and SYS. On an NVLink system the relative standing of tensor and pipeline parallelism could differ.
 
 **Assumptions in the residual decomposition.** The residual reported in §5.4 (10.43 ms at tp = 1, 12.49 ms at tp = 4) is obtained by subtracting a weight-transfer time computed from the A40's theoretical peak bandwidth of 696 GB/s. Effective bandwidth is lower, so both the absolute residual and its 19.7 % growth depend on that assumption; an effective bandwidth 10 % below peak puts the growth just under 50 %. The residual is also not a measurement of communication — it collects attention computation, kernel launches, and framework overhead as well. The increment is consistent with the added all-reduce but has not been isolated from the rest.
@@ -436,9 +435,6 @@ with the proportion rising with the arrival rate. The CPU-side work measured her
 **Scope of generalization.** The measurements cover one GPU model (A40 48GB), one model family (Qwen2.5 at 7B and 0.5B), and two datasets. Extrapolation to other architectures, precisions, or sequence-length distributions lies outside what was measured.
 
 ## 7. Conclusion
-
-<!-- BUDGET 0.3p. One short paragraph per RQ, answering it directly.
-     No new numbers that have not appeared above. -->
 
 **RQ1 — arrival rate and capacity.** Multiplying the arrival rate eightfold, from 1 to 8 req/s, raises TTFT p50 only 1.6-fold, from 76 ms to 120 ms. The increase appears in the tail rather than the median: ITL p95 grows 2.8-fold while its p50 barely moves. Mean scheduler queue dwell stayed at or below 0.021 ms at every finite rate of this sweep, and the scheduler's waiting count was 0 at every step of it, because vLLM admits waiting requests into the running batch at the next scheduling step rather than holding them; backlog on that side registers as batch growth rather than queue length. This is a scheduler-side measurement — the client-observed wait also contains a frontend and transport component that §4.2 quantifies. That structure makes achieved throughput a weak indicator of saturation — its value depends on which definition is used, and it does not flatten within the finite grid. Capacity was therefore estimated from the closed-loop measurement instead. Raising the concurrency limit, the trade-off comes into balance between 32 and 64, and from 64 to 128 throughput gains only 0.9 % while latency costs 5.4 %. The ceiling is 711 tok/s, or roughly 3.7 req/s at this workload's mean output length of 191.6 tokens.
 
