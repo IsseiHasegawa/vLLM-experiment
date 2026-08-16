@@ -371,9 +371,6 @@ In summary, tensor parallelism reduces the weight streaming each GPU performs, a
 
 ### 5.4 Sublinear scaling and topology
 
-<!-- tp=4 crosses NUMA (SYS) whereas tp=2 stays within one NUMA node (PXB).
-     Reference the recorded `nvidia-smi topo -m` output in Appendix C. -->
-
 The gain from doubling the degree of parallelism is not constant. At rate 8, the gain from tp = 1 to tp = 2 is 32.5 %, whereas the gain from tp = 2 to tp = 4 is 14.7 %, less than half. At rate ∞ the difference is larger still: 44.0 % against 7.9 %. Step times behave the same way, with the reduction falling from 1.449x (72 % of the ideal 2.0) to 1.241x (62 %).
 
 **What sharding can divide, and what it cannot.** Using the weight-transfer time from §5.3 makes the shape of the diminishing return visible. Subtracting the theoretical weight-transfer time from the step time leaves a residual of 10.43 ms at tp = 1, 11.35 ms at tp = 2, and 12.49 ms at tp = 4. Weight transfer falls exactly in inverse proportion to the shard count, from 21.84 ms to 5.46 ms, but the residual does not fall at all: it grows by 19.7 %.
